@@ -9,18 +9,28 @@
 # agent_config.yaml is gitignored — never commit real keys.
 # ─────────────────────────────────────────────────────────────
 
+# Handle: @<your band username>/signal-processing
 signal_processing:
   agent_id: "00000000-0000-0000-0000-000000000001"
-  api_key: "band_api_key_for_signal_processing"
+  api_key: "band_api_ke_for_signal_processing"
 
+# Handle: @<your band username>/narrative-analyst
 narrative_analyst:
   agent_id: "00000000-0000-0000-0000-000000000002"
   api_key: "band_api_key_for_narrative_analyst"
 
+# Handle: @<your band username>/latent-state
 latent_state:
   agent_id: "00000000-0000-0000-0000-000000000003"
   api_key: "band_api_key_for_latent_state"
 
+# Handle: @<your band username>/executive
 executive:
   agent_id: "00000000-0000-0000-0000-000000000004"
   api_key: "band_api_key_for_executive"
+
+# Test agent for development and testing (Gemini, free-tier)
+# Handle: @<your band username>/my-agent
+my_agent:
+  agent_id: "00000000-0000-0000-0000-000000000005"
+  api_key: "band_api_key_for_my_agent"
