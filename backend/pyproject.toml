@@ -2,17 +2,25 @@
 name = "alphasign-backend"
 version = "0.1.0"
 description = "AlphaSign multi-agent risk intelligence platform — backend agents"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "openai>=1.0",
     "python-dotenv>=1.0",
     "pyyaml>=6.0",
     "httpx>=0.27",
+    "anthropic",
+    "fredapi",
+    "langchain",
+    "langchain-anthropic",
+    "langchain-google-genai",
+    "langchain-openai",
+    "langgraph",
     "numpy",
     "pandas",
     "scipy",
     "yfinance",
     "pykalman",
+    "thenvoi-sdk",
     "fastapi",
     "uvicorn[standard]",
 ]

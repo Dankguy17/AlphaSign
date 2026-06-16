@@ -68,9 +68,7 @@ or AI/ML API to reason about it, then send a response back via Band.
    `latent_state`, `executive`. Copy each `agent_id` + `api_key`.
 4. `cp agent_config.yaml.example agent_config.yaml` and fill in those
    credentials.
-5. Install dependencies: `uv init` (if not already) then
-   `uv add openai python-dotenv pyyaml httpx numpy pandas scipy yfinance pykalman fastapi "uvicorn[standard]"`,
-   plus the Band SDK with an adapter extra, e.g. `uv add "band-sdk[pydantic-ai]"`.
+5. Install dependencies from the backend project file with `uv sync`.
 6. Run `uv run python scripts/test_connections.py` — this checks all three
    API sources independently and tells you exactly which credentials (if
    any) are wrong before you write any agent logic.
