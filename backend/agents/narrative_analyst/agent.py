@@ -172,6 +172,25 @@ TOOLS = [
 class AgentWhiteboxLogger(BaseCallbackHandler):
     """Print tool decisions so the team can debug live deliberation."""
 
+    def on_chat_model_start(self, serialized, messages, **kwargs):
+        print("\n[NARRATIVE AGENT] Message received by local agent; starting LLM reasoning...\n")
+
+    def on_tool_start(self, serialized, input_str, **kwargs):
+        name = serialized.get("name", "unknown_tool") if isinstance(serialized, dict) else "unknown_tool"
+        print(f"\n[NARRATIVE AGENT TOOL START] {name}: {input_str}\n")
+
+    def on_tool_end(self, output, **kwargs):
+        preview = str(output)
+        if len(preview) > 800:
+            preview = preview[:800] + "... [truncated]"
+        print(f"\n[NARRATIVE AGENT TOOL END] {preview}\n")
+
+    def on_tool_error(self, error, **kwargs):
+        print(f"\n[NARRATIVE AGENT TOOL ERROR] {error}\n")
+
+    def on_llm_error(self, error, **kwargs):
+        print(f"\n[NARRATIVE AGENT LLM ERROR] {error}\n")
+
     def on_llm_end(self, response, **kwargs):
         for generation in response.generations:
             for item in generation:
@@ -220,11 +239,13 @@ def _build_llm() -> object:
         )
 
     return ChatOpenAI(
-        model=os.getenv("FEATHERLESS_MODEL", "deepseek-ai/DeepSeek-V3-0324"),
+        model=os.getenv("FEATHERLESS_MODEL", "Qwen/Qwen2.5-7B-Instruct"),
         api_key=os.getenv("FEATHERLESS_API_KEY", ""),
         base_url=os.getenv("FEATHERLESS_BASE_URL", "https://api.featherless.ai/v1"),
         rate_limiter=rate_limiter,
         callbacks=callbacks,
+        timeout=float(os.getenv("NARRATIVE_LLM_TIMEOUT_SECONDS", "60")),
+        max_retries=int(os.getenv("NARRATIVE_LLM_MAX_RETRIES", "1")),
     )
 
 

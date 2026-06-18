@@ -35,8 +35,9 @@ quality, so Executive can prefer higher-confidence evidence.
 2. Yahoo Finance RSS, no key.
 3. `yfinance.Ticker.news`, no key.
 4. Optional Featherless/AI-ML API model for polished synthesis. The default
-   Featherless model is `deepseek-ai/DeepSeek-V3-0324`, matching the hackathon
-   setup guide's sample call.
+   Featherless model is `Qwen/Qwen2.5-7B-Instruct` for live demo speed. You can
+   switch to `deepseek-ai/DeepSeek-V3-0324` for stronger reasoning if cold-start
+   latency is acceptable.
 
 ## Local test
 
