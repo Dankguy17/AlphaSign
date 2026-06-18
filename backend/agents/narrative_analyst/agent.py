@@ -16,6 +16,7 @@ import asyncio
 import json
 import logging
 import os
+from datetime import date, timedelta
 from uuid import UUID
 
 from dotenv import load_dotenv
@@ -224,6 +225,122 @@ def _format_multi_band_report(results: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def _compute_price_move(ticker: str, days: int) -> dict:
+    """
+    Best-effort price move check for the autopsy view.
+
+    Signal Processing remains the source of truth for serious quantitative
+    metrics. Narrative uses this only to frame the follow-up question.
+    """
+    try:
+        import yfinance as yf
+    except ImportError:
+        return {"available": False, "reason": "yfinance is not installed"}
+
+    try:
+        end = date.today()
+        start = end - timedelta(days=max(days + 7, 10))
+        data = yf.download(
+            ticker,
+            start=start.isoformat(),
+            end=end.isoformat(),
+            interval="1d",
+            progress=False,
+            auto_adjust=True,
+        )
+    except Exception as exc:
+        return {"available": False, "reason": str(exc)}
+
+    if data.empty:
+        return {"available": False, "reason": "no price data returned"}
+
+    if hasattr(data.columns, "nlevels") and data.columns.nlevels > 1:
+        close = data["Close"][ticker]
+    else:
+        close = data["Close"]
+
+    close = close.dropna()
+    if len(close) < 2:
+        return {"available": False, "reason": "not enough close prices"}
+
+    start_price = float(close.iloc[0])
+    end_price = float(close.iloc[-1])
+    move_pct = ((end_price / start_price) - 1.0) * 100
+    return {
+        "available": True,
+        "ticker": ticker.upper(),
+        "days_requested": days,
+        "start_date": str(close.index[0].date()),
+        "end_date": str(close.index[-1].date()),
+        "start_price": round(start_price, 4),
+        "end_price": round(end_price, 4),
+        "move_pct": round(move_pct, 2),
+    }
+
+
+def _format_autopsy_report(ticker: str, days: int, price_move: dict, radar: dict, brief: dict) -> str:
+    reliability = radar.get("source_reliability", {})
+    themes = [theme.get("theme", "unknown") for theme in radar.get("themes", [])[:4]]
+    signal_request = dict(radar.get("signal_request", {}))
+    signal_request["autopsy_focus"] = {
+        "days": days,
+        "observed_move_pct": price_move.get("move_pct") if price_move.get("available") else None,
+        "question": "Explain how much of the move is market-wide, company-specific, volatility-driven, or trend/regime-shift-driven.",
+    }
+    latent_request = dict(radar.get("latent_request", {}))
+    latent_request["autopsy_focus"] = {
+        "days": days,
+        "question": "Check whether the observed move is consistent with a persistent trend or a transient shock.",
+    }
+
+    price_line = (
+        f"{price_move['move_pct']}% from {price_move['start_price']} to {price_move['end_price']} "
+        f"({price_move['start_date']} to {price_move['end_date']})"
+        if price_move.get("available")
+        else f"Price move unavailable: {price_move.get('reason', 'unknown reason')}"
+    )
+
+    evidence_lines = []
+    for article in radar.get("top_articles", [])[:5]:
+        source_reliability = article.get("source_reliability", {})
+        evidence_lines.append(
+            f"- {article.get('title', 'Untitled')} "
+            f"({article.get('source', 'Unknown source')}, "
+            f"{source_reliability.get('tier_label', 'Unscored')}, "
+            f"confidence {source_reliability.get('confidence', 'n/a')})"
+        )
+
+    return "\n".join(
+        [
+            f"## Movement Autopsy: {ticker.upper()} over {days} days",
+            "",
+            f"**Observed move:** {price_line}",
+            f"**Narrative hypothesis:** {brief.get('summary', 'No summary generated.')}",
+            f"**Primary themes:** {', '.join(themes) if themes else 'No strong themes detected'}",
+            f"**Evidence confidence:** average {reliability.get('average_confidence', 'n/a')}, highest tier {reliability.get('highest_tier', 'n/a')}",
+            "",
+            "**Likely narrative drivers to validate:**",
+            f"- Bullish case: {brief.get('bullish_case', radar.get('bullish_thesis', 'n/a'))}",
+            f"- Bearish/alternate case: {brief.get('bearish_case', radar.get('bearish_thesis', 'n/a'))}",
+            "",
+            "**Top evidence:**",
+            *(evidence_lines or ["- No focused evidence found."]),
+            "",
+            "**What Signal Processing should quantify next:**",
+            "```json",
+            json.dumps(signal_request, indent=2),
+            "```",
+            "",
+            "**What Latent State should validate next:**",
+            "```json",
+            json.dumps(latent_request, indent=2),
+            "```",
+            "",
+            "**Autopsy status:** preliminary explanation ready; final confidence should be assigned after Signal Processing and Latent State respond.",
+        ]
+    )
+
+
 @tool
 def search_company_news(ticker: str, company_name: str = "", lens: str = "", days_back: int = 14) -> str:
     """
@@ -410,6 +527,50 @@ def build_multi_ticker_narrative_report(
     })
 
 
+@tool
+def build_move_autopsy_report(
+    ticker: str,
+    days: int = 30,
+    lens: str = "",
+) -> str:
+    """
+    Build a demo-friendly movement autopsy for questions like:
+    "Why did NVDA move 18% in the last 30 days?"
+
+    This combines a lightweight observed price move, recent news evidence,
+    source reliability, and explicit follow-up requests to Signal Processing
+    and Latent State. After this tool returns, call thenvoi_send_message with
+    the returned 'band_message' value as content.
+    """
+    days = max(1, min(int(days), 365))
+    symbol = ticker.upper()
+    autopsy_lens = lens or f"Explain the major narrative drivers of {symbol}'s move over the last {days} days."
+    price_move = _compute_price_move(symbol, days)
+    articles = fetch_company_news(
+        ticker=symbol,
+        lens=autopsy_lens,
+        days_back=days,
+        limit=int(os.getenv("NARRATIVE_MAX_ARTICLES", "25")),
+    )
+    radar = build_narrative_radar(
+        ticker=symbol,
+        articles=articles,
+        lens=autopsy_lens,
+    )
+    brief = generate_narrative_brief(radar)
+    band_message = _format_autopsy_report(symbol, days, price_move, radar, brief)
+    return _json_dumps({
+        "ticker": symbol,
+        "days": days,
+        "price_move": price_move,
+        "band_message": band_message,
+        "radar": radar,
+        "brief": brief,
+        "signal_request": radar.get("signal_request", {}),
+        "latent_request": radar.get("latent_request", {}),
+    })
+
+
 TOOLS = [
     search_company_news,
     fetch_free_yahoo_news,
@@ -418,6 +579,7 @@ TOOLS = [
     score_source_reliability_tool,
     build_full_narrative_report,
     build_multi_ticker_narrative_report,
+    build_move_autopsy_report,
     build_narrative_radar_tool,
     generate_narrative_brief_tool,
 ]
@@ -493,7 +655,7 @@ def _build_llm() -> object:
         )
 
     return ChatOpenAI(
-        model=os.getenv("FEATHERLESS_MODEL", "Qwen/Qwen2.5-7B-Instruct"),
+        model=os.getenv("FEATHERLESS_MODEL", "deepseek-ai/DeepSeek-V3-0324"),
         api_key=os.getenv("FEATHERLESS_API_KEY", ""),
         base_url=os.getenv("FEATHERLESS_BASE_URL", "https://api.featherless.ai/v1"),
         rate_limiter=rate_limiter,
@@ -514,7 +676,7 @@ async def main():
     logger.info("Band REST URL: %s", os.getenv("THENVOI_REST_URL") or os.getenv("BAND_REST_URL"))
     logger.info("Band WS URL: %s", os.getenv("THENVOI_WS_URL") or os.getenv("BAND_WS_URL"))
     logger.info("LLM provider: %s", os.getenv("NARRATIVE_LLM_PROVIDER", "featherless"))
-    logger.info("Featherless model: %s", os.getenv("FEATHERLESS_MODEL", "Qwen/Qwen2.5-7B-Instruct"))
+    logger.info("Featherless model: %s", os.getenv("FEATHERLESS_MODEL", "deepseek-ai/DeepSeek-V3-0324"))
 
     adapter = LangGraphAdapter(
         llm=_build_llm(),

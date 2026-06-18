@@ -35,9 +35,8 @@ quality, so Executive can prefer higher-confidence evidence.
 2. Yahoo Finance RSS, no key.
 3. `yfinance.Ticker.news`, no key.
 4. Optional Featherless/AI-ML API model for polished synthesis. The default
-   Featherless model is `Qwen/Qwen2.5-7B-Instruct` for live demo speed. You can
-   switch to `deepseek-ai/DeepSeek-V3-0324` for stronger reasoning if cold-start
-   latency is acceptable.
+   Featherless model is `deepseek-ai/DeepSeek-V3-0324` because team testing
+   found it much stronger for Band tool orchestration than Qwen.
 
 ## Local test
 
@@ -72,6 +71,15 @@ For multi-stock requests such as `research AAPL, MSFT, and NVDA`, the LLM
 should call `build_multi_ticker_narrative_report`, then call
 `thenvoi_send_message` with the returned `band_message`. The response includes
 separate Signal Processing and Latent State request JSON for each ticker.
+
+For movement explanations such as `why did NVDA rise 18% in 30 days`, the LLM
+should call `build_move_autopsy_report`, then post the returned `band_message`.
+This produces a demo-friendly preliminary root-cause report and asks Signal
+Processing/Latent State to validate the quantitative claims.
+
+The system prompt explicitly forbids room/participant management. Agent launch
+and room setup should stay in backend driver code, not inside the LLM's
+autonomous tool choices.
 
 If Band returns `401 Unauthorized`, fill in the real `narrative_analyst`
 `agent_id` and `api_key` in `agent_config.yaml`. The example values are
