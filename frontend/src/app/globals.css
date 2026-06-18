@@ -1,26 +1,55 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f8fafc;
+  --foreground: #0f172a;
+  --panel: #ffffff;
+  --panel-muted: #f1f5f9;
+  --border: #dbe3ee;
+  --muted: #64748b;
+  --alpha-50: #e3f2fd;
+  --alpha-100: #bbdefb;
+  --alpha-200: #90caf9;
+  --alpha-300: #64b5f6;
+  --alpha-400: #42a5f5;
+  --alpha-500: #2196f3;
+  --alpha-600: #1e88e5;
+  --alpha-700: #1976d2;
+  --alpha-800: #1565c0;
+  --alpha-900: #0d47a1;
+  --positive: #15803d;
+  --negative: #b91c1c;
+  --warning: #b45309;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --font-sans: "Geist", "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono", "Geist Mono Fallback", ui-monospace, monospace;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: "Geist", "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button:focus-visible,
+input:focus-visible,
+summary:focus-visible {
+  outline: 3px solid var(--alpha-200);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: var(--alpha-100);
+  color: var(--alpha-900);
 }
