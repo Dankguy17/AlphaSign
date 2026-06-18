@@ -1,0 +1,67 @@
+@import "tailwindcss";
+
+/* ── Design tokens (Linear dark system) ── */
+:root {
+  --ds-canvas:           #010102;
+  --ds-surface-1:        #0f1011;
+  --ds-surface-2:        #141516;
+  --ds-surface-3:        #18191a;
+  --ds-hairline:         #23252a;
+  --ds-hairline-strong:  #34343a;
+  --ds-hairline-tertiary:#3e3e44;
+  --ds-ink:              #f7f8f8;
+  --ds-ink-muted:        #d0d6e0;
+  --ds-ink-subtle:       #8a8f98;
+  --ds-ink-tertiary:     #62666d;
+  --ds-primary:          #5e6ad2;
+  --ds-primary-hover:    #828fff;
+  --ds-primary-focus:    #5e69d1;
+  --ds-success:          #27a644;
+}
+
+/* ── Base ── */
+html, body {
+  background-color: var(--ds-canvas);
+  color: var(--ds-ink);
+  font-family: var(--font-geist-sans, -apple-system, system-ui, sans-serif);
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* ── Pulse animation (StatusBadge running dot) ── */
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.25; }
+}
+
+/* ── Thin scrollbar ── */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: var(--ds-canvas);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--ds-hairline-strong);
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--ds-ink-tertiary);
+}
+
+/* ── Focus ring ── */
+:focus-visible {
+  outline: 2px solid var(--ds-primary-focus);
+  outline-offset: 2px;
+}
+
+/* ── Input placeholder ── */
+input::placeholder {
+  color: var(--ds-ink-tertiary);
+}
