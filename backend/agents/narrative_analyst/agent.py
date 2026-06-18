@@ -68,6 +68,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -79,10 +80,12 @@ from thenvoi import Agent
 from thenvoi.adapters import LangGraphAdapter
 from thenvoi.config import load_agent_config
 from langchain_openai import ChatOpenAI
+from langchain_core.messages import AIMessage
 from langchain_core.tools import tool
 from langchain_core.runnables import RunnableConfig
 from langchain_core.callbacks import BaseCallbackHandler
 from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.prebuilt import create_react_agent
 from langchain_core.rate_limiters import InMemoryRateLimiter
 
 # Package-relative imports
@@ -449,6 +452,119 @@ def incorporate_quant_findings(
 TOOLS = [start_narrative_research, incorporate_quant_findings]
 
 
+def _tool_name(tool_like: Any) -> str | None:
+    """Return the LangChain tool name from tools supplied by Band or locally."""
+    if isinstance(tool_like, dict):
+        name = tool_like.get("name")
+        return str(name) if name else None
+
+    name = getattr(tool_like, "name", None)
+    return str(name) if name else None
+
+
+def _repair_tool_calls_hook(tool_names: set[str], send_tool_name: str | None):
+    """
+    Build a LangGraph post-model hook that prevents malformed provider tool
+    calls from crashing ToolNode.
+
+    Featherless/OpenAI-compatible models can occasionally return a valid-looking
+    argument object with a missing tool name/id. In this agent each required
+    tool call has a distinct argument shape, so we can repair the known shapes
+    before LangGraph's ToolNode validates them.
+    """
+
+    def repair_tool_calls(state: dict[str, Any]) -> dict[str, list[AIMessage]]:
+        messages = state.get("messages", [])
+        if not messages:
+            return {}
+
+        last_message = messages[-1]
+        if not isinstance(last_message, AIMessage) or not last_message.tool_calls:
+            return {}
+
+        repaired_calls: list[dict[str, Any]] = []
+        changed = False
+
+        for raw_call in last_message.tool_calls:
+            call = dict(raw_call)
+            name = call.get("name")
+            args = call.get("args")
+            call_id = call.get("id")
+
+            if not isinstance(call_id, str) or not call_id:
+                call["id"] = f"autofixed-{uuid.uuid4().hex}"
+                changed = True
+
+            if isinstance(name, str) and name in tool_names:
+                repaired_calls.append(call)
+                continue
+
+            if not name and isinstance(args, dict):
+                inferred_name: str | None = None
+                if "ticker" in args and "start_narrative_research" in tool_names:
+                    inferred_name = "start_narrative_research"
+                elif (
+                    "quant_summary" in args
+                    and "incorporate_quant_findings" in tool_names
+                ):
+                    inferred_name = "incorporate_quant_findings"
+                elif send_tool_name and "content" in args:
+                    inferred_name = send_tool_name
+
+                if inferred_name:
+                    logger.warning(
+                        "Repairing nameless tool call with args %s as %s",
+                        sorted(args),
+                        inferred_name,
+                    )
+                    call["name"] = inferred_name
+                    repaired_calls.append(call)
+                    changed = True
+                    continue
+
+            logger.warning("Dropping malformed/unknown tool call from model: %r", raw_call)
+            changed = True
+
+        if not changed:
+            return {}
+
+        additional_kwargs = dict(last_message.additional_kwargs)
+        additional_kwargs.pop("tool_calls", None)
+
+        return {
+            "messages": [
+                AIMessage(
+                    content=last_message.content,
+                    additional_kwargs=additional_kwargs,
+                    response_metadata=last_message.response_metadata,
+                    id=last_message.id or f"autofixed-message-{uuid.uuid4().hex}",
+                    name=last_message.name,
+                    tool_calls=repaired_calls,
+                    invalid_tool_calls=last_message.invalid_tool_calls,
+                    usage_metadata=last_message.usage_metadata,
+                )
+            ]
+        }
+
+    return repair_tool_calls
+
+
+def _build_graph_factory(llm: ChatOpenAI, checkpointer: InMemorySaver):
+    def graph_factory(thenvoi_tools: list[Any]):
+        all_tools = thenvoi_tools + TOOLS
+        tool_names = {name for tool_like in all_tools if (name := _tool_name(tool_like))}
+        send_tool_name = "thenvoi_send_message" if "thenvoi_send_message" in tool_names else None
+
+        return create_react_agent(
+            model=llm,
+            tools=all_tools,
+            checkpointer=checkpointer,
+            post_model_hook=_repair_tool_calls_hook(tool_names, send_tool_name),
+        )
+
+    return graph_factory
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # System Prompt
 #
@@ -513,9 +629,9 @@ class AgentWhiteboxLogger(BaseCallbackHandler):
                     print("🤖 [NARRATIVE AGENT] LLM tool decision:")
                     call_counts: dict[str, int] = {}
                     for tc in g.message.tool_calls:
-                        name = tc["name"]
+                        name = tc.get("name") or "<missing-tool-name>"
                         call_counts[name] = call_counts.get(name, 0) + 1
-                        args_str = _json.dumps(tc["args"])
+                        args_str = _json.dumps(tc.get("args"))
                         if len(args_str) > 300:
                             args_str = args_str[:300] + "…"
                         print(f"   🔧 {name}({args_str})")
@@ -562,11 +678,11 @@ async def main():
         max_retries=2,
     )
 
+    checkpointer = InMemorySaver()
+
     adapter = LangGraphAdapter(
-        llm=llm,
-        checkpointer=InMemorySaver(),
+        graph_factory=_build_graph_factory(llm, checkpointer),
         custom_section=SYSTEM_PROMPT,
-        additional_tools=TOOLS,
     )
 
     agent = Agent.create(
