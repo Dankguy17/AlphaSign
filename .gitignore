@@ -27,3 +27,9 @@ env/
 # UV
 
 backend/uv.lock
+
+#AGENTS.md
+
+/AGENTS.md
+/frontend/AGENTS.md
+/frontend/AGENTS 2.md
