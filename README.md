@@ -58,6 +58,11 @@ are where each agent's actual "thinking" (LLM calls) happens.** An agent's
 code will typically do both — receive a message via Band, call Featherless
 or AI/ML API to reason about it, then send a response back via Band.
 
+Signal Processing can run on either Groq or Deepseek. Set
+`SIGNAL_PROCESSING_PROVIDER=groq` to use `GROQ_API_KEY`/`GROQ_MODEL`, or set
+`SIGNAL_PROCESSING_PROVIDER=deepseek` to use the existing Featherless
+DeepSeek route with `FEATHERLESS_API_KEY`/`DEEPSEEK_MODEL`.
+
 ## Setup order
 
 1. `cd backend`
