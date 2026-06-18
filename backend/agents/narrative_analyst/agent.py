@@ -18,6 +18,7 @@ import logging
 import os
 from uuid import UUID
 
+from dotenv import load_dotenv
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.rate_limiters import InMemoryRateLimiter
 from langchain_core.tools import tool
@@ -26,8 +27,7 @@ from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import InMemorySaver
 from thenvoi import Agent
 from thenvoi.adapters import LangGraphAdapter
-
-from shared.config import load_agent_credentials
+from thenvoi.config import load_agent_config
 
 from .article_extract import extract_article_text
 from .news_fetch import fetch_company_news, fetch_yfinance_news, fetch_yahoo_rss_news
@@ -250,7 +250,11 @@ def _build_llm() -> object:
 
 
 async def main():
-    agent_id, api_key = load_agent_credentials("narrative_analyst")
+    # Match the known-working verify_setup_gui.py connection path as closely
+    # as possible: load .env from backend/, then let thenvoi load the agent
+    # credentials from agent_config.yaml.
+    load_dotenv()
+    agent_id, api_key = load_agent_config("narrative_analyst")
     _validate_band_credentials(agent_id, api_key)
     logger.info("Loaded Narrative Analyst agent: %s", agent_id)
     logger.info("Band REST URL: %s", os.getenv("THENVOI_REST_URL") or os.getenv("BAND_REST_URL"))
