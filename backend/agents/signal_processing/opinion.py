@@ -6,8 +6,8 @@ thread context, and produces a short natural-language "opinion" string
 via an LLM call.
 
 This is the swap point for model providers. The default provider is Groq.
-Set SIGNAL_OPINION_PROVIDER=groq|gemini|featherless|aimlapi to switch
-providers without changing the function signature.
+Set SIGNAL_OPINION_PROVIDER=groq|deepseek|gemini|featherless|aimlapi to override
+the main Signal Processing provider without changing the function signature.
 
 Usage:
     python -m agents.signal_processing.opinion   (from backend/)
@@ -27,6 +27,8 @@ load_dotenv(find_dotenv())
 
 DEFAULT_GROQ_BASE_URL = "https://api.groq.com/openai/v1"
 DEFAULT_GROQ_MODEL = "llama-3.3-70b-versatile"
+DEFAULT_FEATHERLESS_BASE_URL = "https://api.featherless.ai/v1"
+DEFAULT_DEEPSEEK_MODEL = "deepseek-ai/DeepSeek-V4-Pro"
 
 
 SYSTEM_PROMPT = """You are the Signal Processing agent in AlphaSign, a \
@@ -135,11 +137,24 @@ def _call_groq(system_prompt: str, user_prompt: str) -> str:
     )
 
 
+def _call_deepseek(system_prompt: str, user_prompt: str) -> str:
+    return _call_openai_compatible(
+        system_prompt,
+        user_prompt,
+        base_url=os.getenv("FEATHERLESS_BASE_URL", DEFAULT_FEATHERLESS_BASE_URL),
+        api_key=os.getenv("FEATHERLESS_API_KEY", ""),
+        model=os.getenv("SIGNAL_OPINION_MODEL")
+        or os.getenv("SIGNAL_PROCESSING_MODEL")
+        or os.getenv("DEEPSEEK_MODEL")
+        or os.getenv("FEATHERLESS_MODEL", DEFAULT_DEEPSEEK_MODEL),
+    )
+
+
 def _call_featherless(system_prompt: str, user_prompt: str) -> str:
     return _call_openai_compatible(
         system_prompt,
         user_prompt,
-        base_url=os.getenv("FEATHERLESS_BASE_URL", "https://api.featherless.ai/v1"),
+        base_url=os.getenv("FEATHERLESS_BASE_URL", DEFAULT_FEATHERLESS_BASE_URL),
         api_key=os.getenv("FEATHERLESS_API_KEY", ""),
         model=os.getenv("FEATHERLESS_MODEL", "Qwen/Qwen2.5-7B-Instruct"),
     )
@@ -157,6 +172,7 @@ def _call_aimlapi(system_prompt: str, user_prompt: str) -> str:
 
 _PROVIDERS = {
     "groq":        _call_groq,
+    "deepseek":    _call_deepseek,
     "gemini":      _call_gemini,
     "featherless": _call_featherless,
     "aimlapi":     _call_aimlapi,
@@ -176,9 +192,14 @@ def generate_opinion(
     Returns: {"opinion": str, "confidence": float}
 
     Provider is selected via SIGNAL_OPINION_PROVIDER env var
-    ("groq" | "gemini" | "featherless" | "aimlapi"), default "groq".
+    ("groq" | "deepseek" | "gemini" | "featherless" | "aimlapi"), defaulting
+    to SIGNAL_PROCESSING_PROVIDER and then "groq".
     """
-    provider_name = os.getenv("SIGNAL_OPINION_PROVIDER", "groq")
+    provider_name = (
+        os.getenv("SIGNAL_OPINION_PROVIDER")
+        or os.getenv("SIGNAL_PROCESSING_PROVIDER")
+        or "groq"
+    ).strip().lower()
     if provider_name not in _PROVIDERS:
         raise ValueError(
             f"Unknown SIGNAL_OPINION_PROVIDER '{provider_name}'. "

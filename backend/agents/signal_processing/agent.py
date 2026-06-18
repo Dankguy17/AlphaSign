@@ -44,10 +44,14 @@ Setup (in addition to backend/.env and agent_config.yaml):
          api_key:  "your-api-key"
   2. Create the agent on app.band.ai/agents (Remote Agent type) and
      add it as a participant in your test chat room.
-  3. Set GROQ_API_KEY in backend/.env. Optionally set
-     SIGNAL_PROCESSING_MODEL or GROQ_MODEL to override the default Groq model.
-  4. (Optional) set SIGNAL_OPINION_PROVIDER=groq|gemini|featherless|aimlapi
-     in backend/.env — defaults to "groq".
+  3. Set SIGNAL_PROCESSING_PROVIDER=groq|deepseek in backend/.env.
+     Defaults to "groq". Groq uses GROQ_API_KEY. Deepseek uses the existing
+     Featherless DeepSeek path via FEATHERLESS_API_KEY.
+  4. Optionally set SIGNAL_PROCESSING_MODEL, GROQ_MODEL, DEEPSEEK_MODEL, or
+     FEATHERLESS_MODEL to override provider defaults.
+  5. (Optional) set SIGNAL_OPINION_PROVIDER=groq|deepseek|gemini|featherless|aimlapi
+     in backend/.env to override opinion generation. By default it follows
+     SIGNAL_PROCESSING_PROVIDER.
 
 Run:
     cd backend/
@@ -60,12 +64,16 @@ import asyncio
 import json
 import logging
 import os
+import uuid
 from typing import Any
 
 from thenvoi import Agent
 from thenvoi.adapters import LangGraphAdapter
+from langchain_core.messages import AIMessage
 from langchain_openai import ChatOpenAI
 from langchain_core.tools import tool
+from langchain_core.rate_limiters import InMemoryRateLimiter
+from langgraph.prebuilt import create_react_agent
 from langgraph.checkpoint.memory import InMemorySaver
 
 from langchain_core.callbacks import BaseCallbackHandler
@@ -93,6 +101,8 @@ for noisy_logger in (
 
 DEFAULT_GROQ_BASE_URL = "https://api.groq.com/openai/v1"
 DEFAULT_GROQ_MODEL = "llama-3.3-70b-versatile"
+DEFAULT_FEATHERLESS_BASE_URL = "https://api.featherless.ai/v1"
+DEFAULT_DEEPSEEK_MODEL = "deepseek-ai/DeepSeek-V4-Pro"
 SIGNAL_DEBUG = os.getenv("SIGNAL_DEBUG", "").lower() in {"1", "true", "yes", "on"}
 
 
@@ -460,6 +470,176 @@ TOOLS = [
     generate_signal_opinion,
 ]
 
+
+def _env_is_missing(value: str | None) -> bool:
+    return not value or value.startswith("your_")
+
+
+def _tool_name(tool_like: Any) -> str | None:
+    if isinstance(tool_like, dict):
+        name = tool_like.get("name")
+        return str(name) if name else None
+
+    name = getattr(tool_like, "name", None)
+    return str(name) if name else None
+
+
+_TOOL_ALIASES = {
+    "compute_all": "compute_all_metrics",
+    "run_signal_analysis": "compute_all_metrics",
+    "compute_beta": "compute_beta_metrics",
+    "beta_metrics": "compute_beta_metrics",
+    "fetch_price_series": "fetch_prices",
+    "fetch_price": "fetch_prices",
+    "get_fred": "get_fred_series",
+    "generate_opinion": "generate_signal_opinion",
+    "signal_opinion": "generate_signal_opinion",
+}
+
+
+def _repair_tool_calls_hook(tool_names: set[str]):
+    """
+    Some OpenAI-compatible providers return tool calls without LangChain's
+    required call id. Fill those ids before ToolNode validation runs.
+    """
+
+    def repair_tool_calls(state: dict[str, Any]) -> dict[str, list[AIMessage]]:
+        messages = state.get("messages", [])
+        if not messages:
+            return {}
+
+        last_message = messages[-1]
+        if not isinstance(last_message, AIMessage) or not last_message.tool_calls:
+            return {}
+
+        repaired_calls: list[dict[str, Any]] = []
+        changed = False
+
+        for raw_call in last_message.tool_calls:
+            call = dict(raw_call)
+            name = call.get("name")
+            call_id = call.get("id")
+
+            if not isinstance(call_id, str) or not call_id:
+                call["id"] = f"autofixed-{uuid.uuid4().hex}"
+                changed = True
+
+            if isinstance(name, str) and name in tool_names:
+                repaired_calls.append(call)
+                continue
+
+            if isinstance(name, str):
+                alias = _TOOL_ALIASES.get(name)
+                if alias in tool_names:
+                    logger.warning("Repairing aliased tool call %s as %s", name, alias)
+                    call["name"] = alias
+                    repaired_calls.append(call)
+                    changed = True
+                    continue
+
+            logger.warning("Dropping malformed/unknown tool call from model: %r", raw_call)
+            changed = True
+
+        if not changed:
+            return {}
+
+        additional_kwargs = dict(last_message.additional_kwargs)
+        additional_kwargs.pop("tool_calls", None)
+
+        return {
+            "messages": [
+                AIMessage(
+                    content=last_message.content,
+                    additional_kwargs=additional_kwargs,
+                    response_metadata=last_message.response_metadata,
+                    id=last_message.id or f"autofixed-message-{uuid.uuid4().hex}",
+                    name=last_message.name,
+                    tool_calls=repaired_calls,
+                    invalid_tool_calls=last_message.invalid_tool_calls,
+                    usage_metadata=last_message.usage_metadata,
+                )
+            ]
+        }
+
+    return repair_tool_calls
+
+
+def _build_graph_factory(llm: ChatOpenAI, checkpointer: InMemorySaver):
+    def graph_factory(thenvoi_tools: list[Any]):
+        all_tools = thenvoi_tools + TOOLS
+        tool_names = {name for tool_like in all_tools if (name := _tool_name(tool_like))}
+
+        return create_react_agent(
+            model=llm,
+            tools=all_tools,
+            checkpointer=checkpointer,
+            post_model_hook=_repair_tool_calls_hook(tool_names),
+        )
+
+    return graph_factory
+
+
+def _create_signal_llm() -> tuple[ChatOpenAI, str, str]:
+    provider = os.getenv("SIGNAL_PROCESSING_PROVIDER", "groq").strip().lower()
+    callbacks = [AgentWhiteboxLogger()] if SIGNAL_DEBUG else None
+
+    if provider == "groq":
+        api_key = os.getenv("GROQ_API_KEY")
+        if _env_is_missing(api_key):
+            raise RuntimeError(
+                "GROQ_API_KEY is required when SIGNAL_PROCESSING_PROVIDER=groq."
+            )
+
+        model = (
+            os.getenv("SIGNAL_PROCESSING_MODEL")
+            or os.getenv("GROQ_MODEL")
+            or DEFAULT_GROQ_MODEL
+        )
+        llm = ChatOpenAI(
+            model=model,
+            api_key=api_key,
+            base_url=os.getenv("GROQ_BASE_URL", DEFAULT_GROQ_BASE_URL),
+            temperature=0,
+            callbacks=callbacks,
+        )
+        return llm, provider, model
+
+    if provider == "deepseek":
+        api_key = os.getenv("FEATHERLESS_API_KEY")
+        if _env_is_missing(api_key):
+            raise RuntimeError(
+                "FEATHERLESS_API_KEY is required when SIGNAL_PROCESSING_PROVIDER=deepseek."
+            )
+
+        model = (
+            os.getenv("SIGNAL_PROCESSING_MODEL")
+            or os.getenv("DEEPSEEK_MODEL")
+            or os.getenv("FEATHERLESS_MODEL")
+            or DEFAULT_DEEPSEEK_MODEL
+        )
+        rate_limiter = InMemoryRateLimiter(
+            requests_per_second=0.2,
+            check_every_n_seconds=0.1,
+            max_bucket_size=1,
+        )
+        llm = ChatOpenAI(
+            model=model,
+            api_key=api_key,
+            base_url=os.getenv("FEATHERLESS_BASE_URL", DEFAULT_FEATHERLESS_BASE_URL),
+            temperature=0,
+            rate_limiter=rate_limiter,
+            callbacks=callbacks,
+            streaming=False,
+            stream_chunk_timeout=None,
+            max_retries=2,
+        )
+        return llm, provider, model
+
+    raise ValueError(
+        f"Unknown SIGNAL_PROCESSING_PROVIDER '{provider}'. Expected 'groq' or 'deepseek'."
+    )
+
+
 class AgentWhiteboxLogger(BaseCallbackHandler):
     """Intercepts LLM lifecycle events to print structured decisions directly to the console."""
     def on_llm_end(self, response, **kwargs):
@@ -625,24 +805,12 @@ async def main():
     agent_id, api_key = load_agent_credentials("signal_processing")
     logger.info(f"Loaded agent: {agent_id}")
 
-    groq_api_key = os.getenv("GROQ_API_KEY")
-    if not groq_api_key:
-        raise RuntimeError("GROQ_API_KEY is required to run the Signal Processing agent.")
-
-    model = os.getenv("SIGNAL_PROCESSING_MODEL") or os.getenv("GROQ_MODEL") or DEFAULT_GROQ_MODEL
-    llm = ChatOpenAI(
-        model=model,
-        api_key=groq_api_key,
-        base_url=os.getenv("GROQ_BASE_URL", DEFAULT_GROQ_BASE_URL),
-        temperature=0,
-        callbacks=[AgentWhiteboxLogger()] if SIGNAL_DEBUG else None,
-    )
+    llm, provider, model = _create_signal_llm()
+    checkpointer = InMemorySaver()
 
     adapter = ReliableDeliveryLangGraphAdapter(
-        llm=llm,
-        checkpointer=InMemorySaver(),
+        graph_factory=_build_graph_factory(llm, checkpointer),
         custom_section=SYSTEM_PROMPT,
-        additional_tools=TOOLS,
     )
 
     agent = Agent.create(
@@ -653,7 +821,11 @@ async def main():
         rest_url=os.getenv("THENVOI_REST_URL"),
     )
 
-    logger.info(f"Signal Processing agent is live on Groq model {model}. Press Ctrl+C to stop.")
+    logger.info(
+        "Signal Processing agent is live on %s model %s. Press Ctrl+C to stop.",
+        provider,
+        model,
+    )
     await agent.run()
 
 
