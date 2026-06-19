@@ -26,6 +26,14 @@ At a high level, the system works like this:
 7. The Executive report is generated once the configured turn limit is reached.
 8. The frontend streams the live transcript, normalized protocol cards, market snapshot, and the final PDF report.
 
+## Related Documentation
+
+- [`backend/agents/narrative_analyst/README.md`](backend/agents/narrative_analyst/README.md)
+- [`frontend/README.md`](frontend/README.md)
+- [`backend/pyproject.toml`](backend/pyproject.toml)
+- [`backend/.env.example`](backend/.env.example)
+
+
 ## Repository Layout
 
 ```text
@@ -349,11 +357,4 @@ The UI is intentionally styled as a dark, high-contrast analytical dashboard rat
 - The quality of output depends on external APIs, live market data, and current Band credentials.
 - Band agent IDs and API keys must be real, correctly configured values.
 - The executive report can only be generated once the configured session turn limit is reached.
-
-## Related Documentation
-
-- [`backend/agents/narrative_analyst/README.md`](backend/agents/narrative_analyst/README.md)
-- [`frontend/README.md`](frontend/README.md)
-- [`backend/pyproject.toml`](backend/pyproject.toml)
-- [`backend/.env.example`](backend/.env.example)
 
