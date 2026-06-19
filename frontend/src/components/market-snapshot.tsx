@@ -1,3 +1,14 @@
+"use client";
+
+import { useEffect, useMemo, useRef } from "react";
+import {
+  AreaSeries,
+  ColorType,
+  CrosshairMode,
+  createChart,
+  type AreaData,
+  type UTCTimestamp,
+} from "lightweight-charts";
 import { formatCompactNumber, formatCurrency, formatDateTime } from "@/lib/formatters";
 import type { MarketSnapshot } from "@/lib/types";
 
@@ -106,61 +117,81 @@ function Metric({
 }
 
 function PriceSparkline({ data }: { data: { date: string; close: number }[] }) {
-  if (data.length < 2) return null;
-  const width = 720;
-  const height = 210;
-  const padding = 18;
-  const values = data.map((point) => point.close);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const chartData = useMemo(() => toChartData(data), [data]);
+  const positive = chartData.length > 1 && chartData.at(-1)!.value >= chartData[0].value;
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || chartData.length < 2) return;
+
+    const lineColor = positive ? "#2fbf71" : "#eb5757";
+    const chart = createChart(container, {
+      width: container.clientWidth,
+      height: 224,
+      layout: {
+        background: { type: ColorType.Solid, color: "transparent" },
+        textColor: "#8a8f98",
+        attributionLogo: true,
+        fontFamily: "var(--font-mono)",
+        fontSize: 11,
+      },
+      grid: {
+        vertLines: { color: "rgba(52, 52, 58, 0.35)" },
+        horzLines: { color: "rgba(52, 52, 58, 0.35)" },
+      },
+      crosshair: { mode: CrosshairMode.Normal },
+      rightPriceScale: { borderColor: "#34343a", scaleMargins: { top: 0.12, bottom: 0.12 } },
+      timeScale: { borderColor: "#34343a", timeVisible: true, secondsVisible: false },
+    });
+    const series = chart.addSeries(AreaSeries, {
+      lineColor,
+      lineWidth: 2,
+      topColor: positive ? "rgba(47, 191, 113, 0.28)" : "rgba(235, 87, 87, 0.28)",
+      bottomColor: "rgba(15, 16, 17, 0)",
+      priceFormat: { type: "price", precision: 2, minMove: 0.01 },
+    });
+    series.setData(chartData);
+    chart.timeScale().fitContent();
+
+    const observer = new ResizeObserver(([entry]) => {
+      chart.applyOptions({ width: Math.floor(entry.contentRect.width) });
+    });
+    observer.observe(container);
+    return () => {
+      observer.disconnect();
+      chart.remove();
+    };
+  }, [chartData, positive]);
+
+  if (chartData.length < 2) return null;
+
+  const values = chartData.map((point) => point.value);
   const min = Math.min(...values);
   const max = Math.max(...values);
-  const range = max - min || 1;
-  const coords = data.map((point, index) => {
-    const x = padding + (index / (data.length - 1)) * (width - padding * 2);
-    const y = height - ((point.close - min) / range) * (height - padding * 2) - padding;
-    return [x, y] as const;
-  });
-  const line = coords.map(([x, y]) => `${x},${y}`).join(" ");
-  const area = `${padding},${height - padding} ${line} ${width - padding},${height - padding}`;
-  const positive = values.at(-1)! >= values[0];
-  const stroke = positive ? "var(--positive)" : "var(--negative)";
 
   return (
-    <div className="inset mt-4 p-3.5">
+    <div className="inset mt-4 overflow-hidden p-3.5">
       <div className="mb-2 flex items-center justify-between text-xs text-[var(--ink-subtle)]">
-        <span>Today · 1 minute</span>
+        <span>Price history · interactive</span>
         <span className="font-mono">
           {formatCurrency(min)} / {formatCurrency(max)}
         </span>
       </div>
-      <svg
-        viewBox={`0 0 ${width} ${height}`}
-        role="img"
-        aria-label="Price chart"
-        className="h-44 w-full"
-        preserveAspectRatio="none"
-      >
-        {[0.25, 0.5, 0.75].map((position) => (
-          <line
-            key={position}
-            x1={padding}
-            x2={width - padding}
-            y1={height * position}
-            y2={height * position}
-            stroke="var(--hairline)"
-            strokeDasharray="4 6"
-          />
-        ))}
-        <polygon points={area} fill={stroke} opacity="0.1" />
-        <polyline
-          points={line}
-          fill="none"
-          stroke={stroke}
-          strokeWidth="3"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          vectorEffect="non-scaling-stroke"
-        />
-      </svg>
+      <div ref={containerRef} role="img" aria-label="Interactive price chart" className="h-56 w-full" />
     </div>
   );
+}
+
+function toChartData(data: { date: string; close: number }[]): AreaData<UTCTimestamp>[] {
+  const points = new Map<number, number>();
+  for (const point of data) {
+    const milliseconds = Date.parse(point.date);
+    if (Number.isFinite(milliseconds) && Number.isFinite(point.close)) {
+      points.set(Math.floor(milliseconds / 1000), point.close);
+    }
+  }
+  return [...points.entries()]
+    .sort(([left], [right]) => left - right)
+    .map(([time, value]) => ({ time: time as UTCTimestamp, value }));
 }
