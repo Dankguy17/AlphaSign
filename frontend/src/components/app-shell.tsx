@@ -10,7 +10,8 @@ import { ReportPanel } from "@/components/report-panel";
 import AnimatedContent from "@/components/animated-content";
 import DarkVeil from "@/components/dark-veil";
 import { useAlphaSignStream, type StreamStatus } from "@/hooks/use-alphasign-stream";
-import { ALPHASIGN_BASE_URL, AgentId, relativeTime } from "@/lib/alphasign";
+import { AgentId, getAlphaSignBaseUrl, relativeTime } from "@/lib/alphasign";
+import { clearAdapterUrl, setAdapterUrl } from "@/lib/adapter-url";
 import type { MarketSnapshot as MarketSnapshotData } from "@/lib/types";
 
 export function AppShell() {
@@ -37,8 +38,11 @@ export function AppShell() {
   const [marketError, setMarketError] = useState<string | null>(null);
   const [marketLoading, setMarketLoading] = useState(false);
   const [introPhase, setIntroPhase] = useState<"idle" | "leaving" | "skeleton" | "ready">("idle");
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [adapterUrlInput, setAdapterUrlInput] = useState("");
 
   useEffect(() => {
+    setAdapterUrlInput(getAlphaSignBaseUrl());
     fetch("/api/alphasign/config", { cache: "no-store" })
       .then((response) => response.json())
       .then((value: { max_turns?: number }) => {
@@ -192,6 +196,21 @@ export function AppShell() {
     window.setTimeout(() => setIntroPhase("ready"), 1250);
   }
 
+  function saveAdapterUrl() {
+    const normalized = adapterUrlInput.trim().replace(/\/$/, "");
+    if (!normalized) return;
+    setAdapterUrl(normalized);
+    setSettingsOpen(false);
+    reload();
+  }
+
+  function resetAdapterUrl() {
+    clearAdapterUrl();
+    setAdapterUrlInput(getAlphaSignBaseUrl());
+    setSettingsOpen(false);
+    reload();
+  }
+
   async function handleCloseRoom() {
     if (!effectiveRoomId || !window.confirm("Close this Band room and remove its runtime agents?")) return;
     setClosingRoom(true);
@@ -308,6 +327,44 @@ export function AppShell() {
                 {closingRoom ? "Closing room…" : "Close Band room"}
               </button>
             ) : null}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setSettingsOpen((open) => !open)}
+                className="btn-secondary px-3 py-1.5 text-xs"
+              >
+                Settings
+              </button>
+              {settingsOpen ? (
+                <div className="absolute right-0 top-full z-30 mt-2 w-[min(92vw,360px)] rounded-lg border border-[var(--hairline-strong)] bg-[var(--canvas)] p-3 shadow-[0_24px_80px_rgba(0,0,0,.28)]">
+                  <div className="text-[11px] font-medium uppercase tracking-wide text-[var(--ink-tertiary)]">
+                    Backend URL
+                  </div>
+                  <input
+                    value={adapterUrlInput}
+                    onChange={(event) => setAdapterUrlInput(event.target.value)}
+                    placeholder="http://localhost:8765"
+                    className="mt-2 h-10 w-full rounded-md border border-[var(--hairline-strong)] bg-[var(--surface-2)] px-3 font-mono text-xs text-[var(--ink)] placeholder:text-[var(--ink-tertiary)]"
+                  />
+                  <p className="mt-2 text-[11px] leading-5 text-[var(--ink-subtle)]">
+                    Stored in a browser cookie and used by the proxy and live adapter calls.
+                  </p>
+                  <div className="mt-3 flex items-center justify-between gap-2">
+                    <button type="button" onClick={resetAdapterUrl} className="btn-secondary px-3 py-1.5 text-xs">
+                      Reset
+                    </button>
+                    <div className="flex gap-2">
+                      <button type="button" onClick={() => setSettingsOpen(false)} className="btn-secondary px-3 py-1.5 text-xs">
+                        Cancel
+                      </button>
+                      <button type="button" onClick={saveAdapterUrl} className="btn-primary px-3 py-1.5 text-xs">
+                        Save
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </div>
           </div>
         </div>
       </header>
@@ -492,7 +549,7 @@ export function AppShell() {
           <section className="panel p-5">
             <h2 className="panel-title">Connection</h2>
             <p className="mt-2.5 break-all font-mono text-xs leading-5 text-[var(--ink-subtle)]">
-              {ALPHASIGN_BASE_URL}
+              {getAlphaSignBaseUrl()}
             </p>
             <dl className="mt-4 grid grid-cols-2 gap-2.5 text-xs">
               <div className="inset p-3">

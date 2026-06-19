@@ -1,4 +1,5 @@
 // Typed client for the real AlphaSign backend adapter.
+import { getAdapterUrl } from "@/lib/adapter-url";
 //
 // Contract (see backend/agent_callback_integration.py):
 //   GET  /stream    SSE of agent messages + report_ready + reset events
@@ -6,9 +7,11 @@
 //   GET  /report    PDF download (404 until generated)
 //   POST /reset     clear history between sessions
 
-export const ALPHASIGN_BASE_URL = (
-  process.env.NEXT_PUBLIC_ALPHASIGN_API_URL ?? "http://localhost:8765"
-).replace(/\/$/, "");
+export const ALPHASIGN_BASE_URL = getAdapterUrl();
+
+export function getAlphaSignBaseUrl() {
+  return getAdapterUrl();
+}
 
 export type AgentId =
   | "narrative_analyst"
@@ -98,10 +101,12 @@ export function messageKey(message: AgentMessage): string {
   return `${message.agent}|${message.ts}|${message.text.slice(0, 64)}`;
 }
 
-export const reportUrl = `${ALPHASIGN_BASE_URL}/report`;
+export function getReportUrl() {
+  return `${getAlphaSignBaseUrl()}/report`;
+}
 
 export async function fetchHistory(signal?: AbortSignal): Promise<AgentMessage[]> {
-  const res = await fetch(`${ALPHASIGN_BASE_URL}/messages`, {
+  const res = await fetch(`${getAlphaSignBaseUrl()}/messages`, {
     signal,
     cache: "no-store",
   });
@@ -115,7 +120,7 @@ export async function fetchHistory(signal?: AbortSignal): Promise<AgentMessage[]
 }
 
 export async function fetchProtocolHistory(signal?: AbortSignal): Promise<ProtocolCardEvent[]> {
-  const res = await fetch(`${ALPHASIGN_BASE_URL}/messages`, { signal, cache: "no-store" });
+  const res = await fetch(`${getAlphaSignBaseUrl()}/messages`, { signal, cache: "no-store" });
   if (!res.ok) throw new Error(`Protocol history fetch failed (${res.status})`);
   const data = (await res.json()) as unknown;
   if (!Array.isArray(data)) return [];
@@ -124,7 +129,7 @@ export async function fetchProtocolHistory(signal?: AbortSignal): Promise<Protoc
 
 export async function checkReportReady(signal?: AbortSignal): Promise<boolean> {
   try {
-    const res = await fetch(reportUrl, { method: "HEAD", signal, cache: "no-store" });
+    const res = await fetch(getReportUrl(), { method: "HEAD", signal, cache: "no-store" });
     return res.ok;
   } catch {
     return false;
@@ -132,7 +137,7 @@ export async function checkReportReady(signal?: AbortSignal): Promise<boolean> {
 }
 
 export async function resetSession(): Promise<void> {
-  const res = await fetch(`${ALPHASIGN_BASE_URL}/reset`, { method: "POST" });
+  const res = await fetch(`${getAlphaSignBaseUrl()}/reset`, { method: "POST" });
   if (!res.ok) throw new Error(`Reset failed (${res.status})`);
 }
 

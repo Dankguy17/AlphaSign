@@ -1,6 +1,6 @@
 "use client";
 
-import { relativeTime, reportUrl } from "@/lib/alphasign";
+import { getReportUrl, relativeTime } from "@/lib/alphasign";
 
 type ReportPanelProps = {
   reportTs: string | null;
@@ -35,7 +35,7 @@ export function ReportPanel({ reportTs }: ReportPanelProps) {
           </div>
         </div>
         <a
-          href={reportUrl}
+          href={getReportUrl()}
           download="alphasign_report.pdf"
           className="btn-primary flex h-10 items-center justify-center text-sm"
         >

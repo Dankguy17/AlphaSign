@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
+import { readAdapterUrlCookie } from "@/lib/adapter-url";
 
-const adapterBaseUrl =
+const defaultAdapterBaseUrl =
   process.env.ALPHASIGN_API_URL?.replace(/\/$/, "") ??
   process.env.NEXT_PUBLIC_ALPHASIGN_API_URL?.replace(/\/$/, "") ??
   "http://localhost:8765";
@@ -19,6 +20,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
 async function proxyRequest(request: NextRequest, context: RouteContext) {
   const { path } = await context.params;
+  const adapterBaseUrl = readAdapterUrlCookie(request.headers.get("cookie")) || defaultAdapterBaseUrl;
   const upstreamUrl = new URL(`${adapterBaseUrl}/${path.join("/")}`);
   upstreamUrl.search = request.nextUrl.search;
 

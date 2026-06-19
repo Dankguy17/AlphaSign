@@ -2,13 +2,13 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  ALPHASIGN_BASE_URL,
   AgentMessage,
   ProtocolCardEvent,
   StreamEvent,
   checkReportReady,
   fetchHistory,
   fetchProtocolHistory,
+  getAlphaSignBaseUrl,
   isAgentMessage,
   isProtocolCard,
   messageKey,
@@ -87,15 +87,16 @@ export function useAlphaSignStream(): AlphaSignStream {
         if (hasReport) setReportReady(true);
       } catch {
         if (cancelled || controller.signal.aborted) return;
+        const adapterBaseUrl = getAlphaSignBaseUrl();
         setError(
-          `Cannot reach the adapter at ${ALPHASIGN_BASE_URL}. Start it, then reconnect.`,
+          `Cannot reach the adapter at ${adapterBaseUrl}. Start it, then reconnect.`,
         );
       }
 
       if (cancelled) return;
 
       // Open the live stream. EventSource auto-reconnects on drop.
-      source = new EventSource(`${ALPHASIGN_BASE_URL}/stream`);
+      source = new EventSource(`${getAlphaSignBaseUrl()}/stream`);
 
       source.onopen = () => {
         setStatus("live");

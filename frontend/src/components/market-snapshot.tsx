@@ -32,6 +32,9 @@ export function MarketSnapshot({
   }
 
   const positive = market.change >= 0;
+  const changePercent = market.change_percent ?? (market.price ? (market.change / (market.price - market.change)) * 100 : 0);
+  const hasPercent = Number.isFinite(changePercent);
+  const displayChangePercent = hasPercent ? changePercent : 0;
 
   return (
     <section
@@ -43,7 +46,7 @@ export function MarketSnapshot({
         <span className="market-snapshot-quote">
           <span>{formatCurrency(market.price)}</span>
           <span className={positive ? "text-[var(--positive)]" : "text-[var(--negative)]"}>
-            {positive ? "+" : ""}{market.change_percent.toFixed(2)}% {positive ? "▲" : "▼"}
+            {positive ? "+" : ""}{displayChangePercent.toFixed(2)}% {positive ? "▲" : "▼"}
           </span>
         </span>
       </div>
@@ -78,7 +81,7 @@ export function MarketSnapshot({
             {formatCurrency(market.change)}
             <span className="opacity-70">
               ({positive ? "+" : ""}
-              {market.change_percent.toFixed(2)}%)
+              {displayChangePercent.toFixed(2)}%)
             </span>
           </span>
         </div>

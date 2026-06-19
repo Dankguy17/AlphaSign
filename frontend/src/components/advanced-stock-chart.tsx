@@ -39,6 +39,7 @@ export function AdvancedStockChart({ market }: { market: MarketSnapshot }) {
   }, []);
 
   const displayedSnapshot = range === "1d" ? market : snapshots[range];
+  const displayedHistory = displayedSnapshot?.history ?? [];
 
   async function selectRange(nextRange: ChartRange) {
     setRange(nextRange);
@@ -103,7 +104,7 @@ export function AdvancedStockChart({ market }: { market: MarketSnapshot }) {
         <ControlButton active={indicators.has("bollinger")} onClick={() => toggleIndicator("bollinger")}>Bollinger</ControlButton>
         <ControlButton active={indicators.has("volume")} onClick={() => toggleIndicator("volume")}>Volume</ControlButton>
         <span className="ml-auto text-[11px] text-[var(--ink-tertiary)]">
-          {loading ? "Loading…" : error ?? (displayedSnapshot ? `${displayedSnapshot.chart_interval ?? "live"} bars · ${displayedSnapshot.history.length} points` : "Select a range")}
+          {loading ? "Loading…" : error ?? (displayedSnapshot ? `${displayedSnapshot.chart_interval ?? "live"} bars · ${displayedHistory.length} points` : "Select a range")}
         </span>
       </div>
       {loading || !displayedSnapshot ? (
@@ -113,7 +114,7 @@ export function AdvancedStockChart({ market }: { market: MarketSnapshot }) {
         </div>
       ) : (
         <ChartCanvas
-          data={displayedSnapshot.history}
+          data={displayedHistory}
           style={style}
           indicators={indicators}
           resetKey={resetKey}

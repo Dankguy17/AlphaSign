@@ -85,12 +85,12 @@ export type MarketSnapshot = {
   name: string;
   price: number;
   change: number;
-  change_percent: number;
+  change_percent?: number;
   volume?: number | null;
   market_cap?: number | null;
   fifty_two_week_low?: number | null;
   fifty_two_week_high?: number | null;
-  history: PricePoint[];
+  history?: PricePoint[];
   chart_range?: string;
   chart_interval?: string;
   source: string;

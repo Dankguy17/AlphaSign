@@ -4,10 +4,11 @@ import type {
   ReportPayload,
   SessionState,
 } from "@/lib/types";
+import { getAdapterUrl } from "@/lib/adapter-url";
 
-export const ADAPTER_BASE_URL =
-  process.env.NEXT_PUBLIC_ALPHASIGN_API_URL?.replace(/\/$/, "") ??
-  "http://localhost:8765";
+export function getAdapterBaseUrl() {
+  return getAdapterUrl();
+}
 
 export const API_BASE_URL = "/api/alphasign";
 
@@ -83,7 +84,7 @@ export async function searchTickers(
 }
 
 export function eventsUrl(sessionId: string) {
-  return `${ADAPTER_BASE_URL}/api/sessions/${encodeURIComponent(sessionId)}/events`;
+  return `${getAdapterBaseUrl()}/api/sessions/${encodeURIComponent(sessionId)}/events`;
 }
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
