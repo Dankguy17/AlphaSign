@@ -1,11 +1,12 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { AgentGraph } from "@/components/agent-graph";
 import { AgentLanes } from "@/components/agent-lanes";
 import { MessageStream } from "@/components/message-stream";
 import { MarketSnapshot } from "@/components/market-snapshot";
 import { ReportPanel } from "@/components/report-panel";
+import DarkVeil from "@/components/dark-veil";
 import { useAlphaSignStream, type StreamStatus } from "@/hooks/use-alphasign-stream";
 import { ALPHASIGN_BASE_URL, AgentId, relativeTime } from "@/lib/alphasign";
 import type { MarketSnapshot as MarketSnapshotData } from "@/lib/types";
@@ -17,6 +18,8 @@ export function AppShell() {
   const [resetting, setResetting] = useState(false);
   const [tickerInput, setTickerInput] = useState("");
   const [ticker, setTicker] = useState<string | null>(null);
+  const [marketTicker, setMarketTicker] = useState<string | null>(null);
+  const previewTimer = useRef<number | null>(null);
   const [maxTurns, setMaxTurns] = useState(3);
   const [savingTurns, setSavingTurns] = useState(false);
   const [turnsStatus, setTurnsStatus] = useState<string | null>(null);
@@ -29,6 +32,7 @@ export function AppShell() {
   const [market, setMarket] = useState<MarketSnapshotData | null>(null);
   const [marketError, setMarketError] = useState<string | null>(null);
   const [marketLoading, setMarketLoading] = useState(false);
+  const [introPhase, setIntroPhase] = useState<"idle" | "leaving" | "skeleton" | "ready">("idle");
 
   useEffect(() => {
     fetch("/api/alphasign/config", { cache: "no-store" })
@@ -40,14 +44,15 @@ export function AppShell() {
   }, []);
 
   useEffect(() => {
-    if (!ticker) return;
+    if (!marketTicker) return;
+    const requestedTicker = marketTicker;
     const controller = new AbortController();
     let active = true;
 
     async function loadMarket() {
       setMarketLoading(true);
       try {
-        const response = await fetch(`/api/alphasign/api/market/${encodeURIComponent(ticker!)}`, {
+        const response = await fetch(`/api/alphasign/api/market/${encodeURIComponent(requestedTicker)}`, {
           cache: "no-store",
           signal: controller.signal,
         });
@@ -73,7 +78,30 @@ export function AppShell() {
       controller.abort();
       window.clearInterval(refresh);
     };
-  }, [ticker]);
+  }, [marketTicker]);
+
+  useEffect(() => () => {
+    if (previewTimer.current) window.clearTimeout(previewTimer.current);
+  }, []);
+
+  function handleTickerInput(value: string) {
+    const normalized = value.toUpperCase();
+    setTickerInput(normalized);
+    if (previewTimer.current) window.clearTimeout(previewTimer.current);
+    if (!/^[A-Z][A-Z0-9.-]{0,9}$/.test(normalized.trim())) {
+      setMarketTicker(null);
+      setMarket(null);
+      setMarketError(null);
+      setMarketLoading(false);
+      return;
+    }
+    setMarketLoading(true);
+    setMarket(null);
+    setMarketError(null);
+    previewTimer.current = window.setTimeout(() => {
+      setMarketTicker(normalized.trim());
+    }, 450);
+  }
 
   const activeAgent: AgentId | null =
     messages.length > 0 ? messages[messages.length - 1].agent : null;
@@ -109,6 +137,7 @@ export function AppShell() {
       setRoomId(result.session_id ?? null);
       setRoomClosed(false);
       setTicker(normalized);
+      setMarketTicker(normalized);
       setTickerInput(normalized);
       setTickerStatus("New Band room created and sent to Narrative Analyst.");
     } catch (sendError) {
@@ -116,6 +145,19 @@ export function AppShell() {
     } finally {
       setSendingTicker(false);
     }
+  }
+
+  function handleTickerOpen(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const normalized = tickerInput.trim().toUpperCase();
+    if (!/^[A-Z][A-Z0-9.-]{0,9}$/.test(normalized)) return;
+    setTicker(normalized);
+    setTickerInput(normalized);
+    setMarketTicker(normalized);
+    setTickerStatus(null);
+    setIntroPhase("leaving");
+    window.setTimeout(() => setIntroPhase("skeleton"), 450);
+    window.setTimeout(() => setIntroPhase("ready"), 1250);
   }
 
   async function handleCloseRoom() {
@@ -161,7 +203,40 @@ export function AppShell() {
   }
 
   return (
-    <main className="relative z-10 min-h-screen">
+    <>
+      {introPhase === "idle" || introPhase === "leaving" ? (
+        <section className={`ticker-intro ${introPhase === "leaving" ? "ticker-intro--leaving" : ""}`}>
+          <div className="absolute inset-0">
+            <DarkVeil speed={1} />
+          </div>
+          <div className="ticker-intro-shade" />
+          <div className="ticker-intro-content">
+            <p className="ticker-intro-kicker">Multi-agent market intelligence</p>
+            <h1>AlphaSign</h1>
+            <p className="ticker-intro-copy">Enter a market ticker to begin the signal.</p>
+            <form className="ticker-intro-form" onSubmit={handleTickerOpen}>
+              <label className="sr-only" htmlFor="intro-ticker">Stock ticker</label>
+              <input
+                id="intro-ticker"
+                value={tickerInput}
+                onChange={(event) => handleTickerInput(event.target.value)}
+                placeholder="Input ticker"
+                maxLength={10}
+                autoComplete="off"
+                spellCheck={false}
+                pattern="[A-Za-z][A-Za-z0-9.-]{0,9}"
+                aria-describedby={tickerStatus ? "intro-ticker-status" : undefined}
+              />
+              <button type="submit" disabled={!tickerInput.trim()}>
+                Open
+              </button>
+            </form>
+            {tickerStatus ? <p id="intro-ticker-status" className="ticker-intro-status">{tickerStatus}</p> : null}
+          </div>
+        </section>
+      ) : null}
+      {introPhase === "skeleton" ? <DashboardSkeleton /> : null}
+    <main className={`relative z-10 min-h-screen ${introPhase === "ready" ? "dashboard-enter" : introPhase !== "idle" && introPhase !== "leaving" ? "invisible" : "hidden"}`}>
       <header className="sticky top-0 z-20 border-b border-[var(--hairline)] bg-[color-mix(in_srgb,var(--canvas)_82%,transparent)] backdrop-blur-xl">
         <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-3.5 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
           <div className="flex items-center gap-3">
@@ -208,12 +283,12 @@ export function AppShell() {
           <section className="panel p-5">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
               <div>
-                <p className="eyebrow">Research target</p>
+                <p className="eyebrow">AlphaSign</p>
                 <h2 className="panel-title mt-1.5">
-                  {ticker ? `Tracking ${ticker}` : "Enter a stock ticker"}
+                  {ticker ? `Tracking ${ticker}` : marketTicker ? `Previewing ${marketTicker}` : "Enter a stock ticker"}
                 </h2>
                 <p className="panel-sub mt-1.5">
-                  Submit a ticker to create a new Band room and begin an observation session.
+                  Review the market data, then run AlphaSign when you are ready for agent analysis.
                 </p>
               </div>
               <div className="flex w-full flex-col gap-2 sm:w-auto">
@@ -225,7 +300,7 @@ export function AppShell() {
                   id="ticker"
                   name="ticker"
                   value={tickerInput}
-                  onChange={(event) => setTickerInput(event.target.value.toUpperCase())}
+                  onChange={(event) => handleTickerInput(event.target.value)}
                   placeholder="AAPL"
                   maxLength={10}
                   autoComplete="off"
@@ -234,9 +309,15 @@ export function AppShell() {
                   title="Enter a ticker such as AAPL or BRK.B"
                   className="h-10 min-w-0 flex-1 rounded-md border border-[var(--hairline-strong)] bg-[var(--surface-2)] px-3 font-mono text-sm font-medium uppercase text-[var(--ink)] placeholder:text-[var(--ink-tertiary)] focus:border-[var(--primary-focus)] sm:w-40"
                 />
-                <button type="submit" disabled={sendingTicker} className="btn-primary h-10 px-4 text-sm">
-                  {sendingTicker ? "Submitting…" : "Submit"}
-                </button>
+                {sendingTicker || (roomId && !reportReady && !roomClosed) ? (
+                  <div className="analysis-progress" role="progressbar" aria-label="AlphaSign analysis in progress">
+                    <span />
+                  </div>
+                ) : (
+                  <button type="submit" className="btn-primary analyze-button h-10 px-5 text-sm">
+                    Analyze
+                  </button>
+                )}
                 </form>
                 {tickerStatus ? (
                   <span className="text-xs text-[var(--ink-subtle)]">{tickerStatus}</span>
@@ -284,7 +365,7 @@ export function AppShell() {
             </div>
           ) : null}
 
-          {ticker ? (
+          {marketTicker || marketLoading ? (
             <MarketSnapshot market={market} loading={marketLoading} error={marketError} />
           ) : null}
 
@@ -342,6 +423,26 @@ export function AppShell() {
         </aside>
       </div>
     </main>
+    </>
+  );
+}
+
+function DashboardSkeleton() {
+  return (
+    <div className="dashboard-skeleton" aria-label="Loading AlphaSign dashboard" aria-busy="true">
+      <div className="dashboard-skeleton-header"><span className="skeleton h-9 w-40 rounded-lg" /><span className="skeleton h-8 w-56 rounded-full" /></div>
+      <div className="dashboard-skeleton-grid">
+        <div className="space-y-6">
+          <div className="skeleton h-36 rounded-[14px]" />
+          <div className="skeleton h-72 rounded-[14px]" />
+          <div className="skeleton h-96 rounded-[14px]" />
+        </div>
+        <div className="space-y-6">
+          <div className="skeleton h-80 rounded-[14px]" />
+          <div className="skeleton h-48 rounded-[14px]" />
+        </div>
+      </div>
+    </div>
   );
 }
 

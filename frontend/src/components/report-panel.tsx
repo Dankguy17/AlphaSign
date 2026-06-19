@@ -1,6 +1,7 @@
 "use client";
 
 import { relativeTime, reportUrl } from "@/lib/alphasign";
+import AnimatedContent from "@/components/animated-content";
 
 type ReportPanelProps = {
   reportReady: boolean;
@@ -14,7 +15,19 @@ export function ReportPanel({ reportReady, reportTs }: ReportPanelProps) {
       <p className="panel-sub mt-2">Executive PDF, compiled when the loop concludes.</p>
 
       {reportReady ? (
-        <div className="mt-4 space-y-3">
+        <AnimatedContent
+          className="mt-4 space-y-3"
+          distance={100}
+          direction="vertical"
+          reverse={false}
+          duration={1.6}
+          ease="power3.out"
+          initialOpacity={0}
+          animateOpacity
+          scale={0.7}
+          threshold={0.4}
+          delay={0}
+        >
           <div className="inset flex items-center gap-3 border-l-2 border-l-[var(--primary)] p-3.5">
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-[var(--primary-soft)] text-[var(--primary-hover)]">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
@@ -43,7 +56,7 @@ export function ReportPanel({ reportReady, reportTs }: ReportPanelProps) {
           >
             Download report
           </a>
-        </div>
+        </AnimatedContent>
       ) : (
         <div className="empty-well mt-4 flex items-center gap-3 p-4 text-sm">
           <span className="live-dot h-2 w-2 shrink-0 rounded-full bg-[var(--ink-tertiary)]" />

@@ -73,7 +73,11 @@ export type AgentEvent = {
 
 export type PricePoint = {
   date: string;
+  open?: number;
+  high?: number;
+  low?: number;
   close: number;
+  volume?: number;
 };
 
 export type MarketSnapshot = {
@@ -87,6 +91,8 @@ export type MarketSnapshot = {
   fifty_two_week_low?: number | null;
   fifty_two_week_high?: number | null;
   history: PricePoint[];
+  chart_range?: string;
+  chart_interval?: string;
   source: string;
   as_of: string;
 };

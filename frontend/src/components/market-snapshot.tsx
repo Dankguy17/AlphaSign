@@ -1,16 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
-import {
-  AreaSeries,
-  ColorType,
-  CrosshairMode,
-  createChart,
-  type AreaData,
-  type UTCTimestamp,
-} from "lightweight-charts";
 import { formatCompactNumber, formatCurrency, formatDateTime } from "@/lib/formatters";
 import type { MarketSnapshot } from "@/lib/types";
+import { AdvancedStockChart } from "@/components/advanced-stock-chart";
+import { MarketSnapshotSkeleton } from "@/components/skeleton";
 
 type MarketSnapshotProps = {
   market: MarketSnapshot | null;
@@ -19,6 +12,8 @@ type MarketSnapshotProps = {
 };
 
 export function MarketSnapshot({ market, loading = false, error = null }: MarketSnapshotProps) {
+  if (loading && !market) return <MarketSnapshotSkeleton />;
+
   if (!market) {
     return (
       <section className="panel p-5">
@@ -77,7 +72,7 @@ export function MarketSnapshot({ market, loading = false, error = null }: Market
           wide
         />
       </div>
-      <PriceSparkline data={market.history} />
+      <AdvancedStockChart key={market.ticker} market={market} />
     </section>
   );
 }
@@ -114,84 +109,4 @@ function Metric({
       </div>
     </div>
   );
-}
-
-function PriceSparkline({ data }: { data: { date: string; close: number }[] }) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const chartData = useMemo(() => toChartData(data), [data]);
-  const positive = chartData.length > 1 && chartData.at(-1)!.value >= chartData[0].value;
-
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container || chartData.length < 2) return;
-
-    const lineColor = positive ? "#2fbf71" : "#eb5757";
-    const chart = createChart(container, {
-      width: container.clientWidth,
-      height: 224,
-      layout: {
-        background: { type: ColorType.Solid, color: "transparent" },
-        textColor: "#8a8f98",
-        attributionLogo: true,
-        fontFamily: "var(--font-mono)",
-        fontSize: 11,
-      },
-      grid: {
-        vertLines: { color: "rgba(52, 52, 58, 0.35)" },
-        horzLines: { color: "rgba(52, 52, 58, 0.35)" },
-      },
-      crosshair: { mode: CrosshairMode.Normal },
-      rightPriceScale: { borderColor: "#34343a", scaleMargins: { top: 0.12, bottom: 0.12 } },
-      timeScale: { borderColor: "#34343a", timeVisible: true, secondsVisible: false },
-    });
-    const series = chart.addSeries(AreaSeries, {
-      lineColor,
-      lineWidth: 2,
-      topColor: positive ? "rgba(47, 191, 113, 0.28)" : "rgba(235, 87, 87, 0.28)",
-      bottomColor: "rgba(15, 16, 17, 0)",
-      priceFormat: { type: "price", precision: 2, minMove: 0.01 },
-    });
-    series.setData(chartData);
-    chart.timeScale().fitContent();
-
-    const observer = new ResizeObserver(([entry]) => {
-      chart.applyOptions({ width: Math.floor(entry.contentRect.width) });
-    });
-    observer.observe(container);
-    return () => {
-      observer.disconnect();
-      chart.remove();
-    };
-  }, [chartData, positive]);
-
-  if (chartData.length < 2) return null;
-
-  const values = chartData.map((point) => point.value);
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-
-  return (
-    <div className="inset mt-4 overflow-hidden p-3.5">
-      <div className="mb-2 flex items-center justify-between text-xs text-[var(--ink-subtle)]">
-        <span>Price history · interactive</span>
-        <span className="font-mono">
-          {formatCurrency(min)} / {formatCurrency(max)}
-        </span>
-      </div>
-      <div ref={containerRef} role="img" aria-label="Interactive price chart" className="h-56 w-full" />
-    </div>
-  );
-}
-
-function toChartData(data: { date: string; close: number }[]): AreaData<UTCTimestamp>[] {
-  const points = new Map<number, number>();
-  for (const point of data) {
-    const milliseconds = Date.parse(point.date);
-    if (Number.isFinite(milliseconds) && Number.isFinite(point.close)) {
-      points.set(Math.floor(milliseconds / 1000), point.close);
-    }
-  }
-  return [...points.entries()]
-    .sort(([left], [right]) => left - right)
-    .map(([time, value]) => ({ time: time as UTCTimestamp, value }));
 }

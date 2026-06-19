@@ -194,12 +194,15 @@ class AlphaSignAdapter:
         return web.json_response(list(self._history))
 
     async def _handle_market_snapshot(self, request: web.Request) -> web.Response:
-        """Return a near-real-time Yahoo Finance quote and intraday series."""
+        """Return a Yahoo Finance quote and range-specific OHLCV series."""
         ticker = request.match_info["ticker"].strip().upper()
+        chart_range = request.query.get("range", "1d").lower()
         if not re.fullmatch(r"[A-Z^][A-Z0-9.^-]{0,14}", ticker):
             return web.json_response({"error": "invalid ticker"}, status=400)
+        if chart_range not in YAHOO_CHART_RANGES:
+            return web.json_response({"error": "invalid chart range"}, status=400)
         try:
-            snapshot = await asyncio.to_thread(_fetch_yahoo_snapshot, ticker)
+            snapshot = await asyncio.to_thread(_fetch_yahoo_snapshot, ticker, chart_range)
         except ValueError as exc:
             return web.json_response({"error": str(exc)}, status=404)
         except Exception:
@@ -365,16 +368,28 @@ class AlphaSignAdapter:
                 pass
 
 
-def _fetch_yahoo_snapshot(symbol: str) -> dict[str, Any]:
+YAHOO_CHART_RANGES = {
+    "1d": ("1d", "1m"),
+    "5d": ("5d", "5m"),
+    "1m": ("1mo", "30m"),
+    "3m": ("3mo", "1d"),
+    "6m": ("6mo", "1d"),
+    "ytd": ("ytd", "1d"),
+    "1y": ("1y", "1d"),
+    "5y": ("5y", "1wk"),
+    "max": ("max", "1mo"),
+}
+
+
+def _fetch_yahoo_snapshot(symbol: str, chart_range: str = "1d") -> dict[str, Any]:
     """Blocking yfinance work; called in a worker thread by the handler."""
     import math
     import yfinance as yf
 
     quote = yf.Ticker(symbol)
-    history = quote.history(period="1d", interval="1m", auto_adjust=False, prepost=False)
-    if history.empty:
-        history = quote.history(period="5d", interval="5m", auto_adjust=False, prepost=False)
-    if history.empty or "Close" not in history:
+    period, interval = YAHOO_CHART_RANGES[chart_range]
+    history = quote.history(period=period, interval=interval, auto_adjust=False, prepost=False)
+    if history.empty or not {"Open", "High", "Low", "Close"}.issubset(history.columns):
         raise ValueError(f"No Yahoo Finance data found for {symbol}")
 
     closes = history["Close"].dropna()
@@ -389,6 +404,10 @@ def _fetch_yahoo_snapshot(symbol: str) -> dict[str, Any]:
             return None
 
     metadata = quote.history_metadata or {}
+    try:
+        info = quote.info or {}
+    except Exception:
+        info = {}
     price = finite(closes.iloc[-1]) or 0.0
     previous_close = finite(metadata.get("chartPreviousClose"))
     if previous_close is None:
@@ -400,22 +419,52 @@ def _fetch_yahoo_snapshot(symbol: str) -> dict[str, Any]:
     change = price - previous_close
 
     fast = quote.fast_info
+    def first_finite(*values: Any) -> float | None:
+        for value in values:
+            result = finite(value)
+            if result is not None:
+                return result
+        return None
+
+    def fast_value(*keys: str) -> Any:
+        for key in keys:
+            try:
+                value = fast[key]
+                if value is not None:
+                    return value
+            except (KeyError, TypeError):
+                continue
+        return None
+
     points = [
-        {"date": index.isoformat(), "close": float(value)}
-        for index, value in closes.items()
-        if finite(value) is not None
+        {
+            "date": index.isoformat(),
+            "open": float(row["Open"]),
+            "high": float(row["High"]),
+            "low": float(row["Low"]),
+            "close": float(row["Close"]),
+            "volume": int(row["Volume"]) if finite(row.get("Volume")) is not None else 0,
+        }
+        for index, row in history.iterrows()
+        if all(finite(row.get(field)) is not None for field in ("Open", "High", "Low", "Close"))
     ]
+
+    year_history = quote.history(period="1y", interval="1d", auto_adjust=False)
+    history_low = finite(year_history["Low"].min()) if not year_history.empty else None
+    history_high = finite(year_history["High"].max()) if not year_history.empty else None
     return {
         "ticker": symbol,
-        "name": metadata.get("longName") or metadata.get("shortName") or symbol,
+        "name": info.get("longName") or info.get("shortName") or metadata.get("longName") or metadata.get("shortName") or symbol,
         "price": price,
         "change": change,
         "change_percent": (change / previous_close * 100) if previous_close else 0.0,
-        "volume": finite(metadata.get("regularMarketVolume")) or finite(fast.get("last_volume")),
-        "market_cap": finite(fast.get("market_cap")),
-        "fifty_two_week_low": finite(fast.get("year_low")),
-        "fifty_two_week_high": finite(fast.get("year_high")),
+        "volume": first_finite(metadata.get("regularMarketVolume"), info.get("regularMarketVolume"), fast_value("lastVolume", "last_volume")),
+        "market_cap": first_finite(info.get("marketCap"), fast_value("marketCap", "market_cap")),
+        "fifty_two_week_low": first_finite(info.get("fiftyTwoWeekLow"), fast_value("yearLow", "year_low"), history_low),
+        "fifty_two_week_high": first_finite(info.get("fiftyTwoWeekHigh"), fast_value("yearHigh", "year_high"), history_high),
         "history": points,
+        "chart_range": chart_range,
+        "chart_interval": interval,
         "source": "Yahoo Finance",
         "as_of": datetime.now(timezone.utc).isoformat(),
     }

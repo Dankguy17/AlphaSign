@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { AGENTS, AGENT_BY_ID, AgentId, AgentMessage, relativeTime } from "@/lib/alphasign";
 import { formatDateTime } from "@/lib/formatters";
+import { Skeleton } from "@/components/skeleton";
 import type { StreamStatus } from "@/hooks/use-alphasign-stream";
 import type { ProtocolCardEvent } from "@/lib/alphasign";
 
@@ -110,7 +111,16 @@ export function MessageStream({
         onScroll={onScroll}
         className="relative mt-4 flex-1 space-y-2.5 overflow-auto rounded-md border border-[var(--hairline)] p-3"
       >
-        {filteredCards.length === 0 ? (
+        {filteredCards.length === 0 && status === "connecting" ? (
+          <div className="min-h-[16rem] space-y-3 p-2" aria-busy="true" aria-label="Connecting to agent stream">
+            {[0, 1, 2].map((item) => (
+              <div key={item} className="inset space-y-3 p-4">
+                <div className="flex justify-between"><Skeleton className="h-4 w-32" /><Skeleton className="h-3 w-20" /></div>
+                <Skeleton className="h-3 w-full" /><Skeleton className="h-3 w-4/5" />
+              </div>
+            ))}
+          </div>
+        ) : filteredCards.length === 0 ? (
           <div className="empty-well flex h-full min-h-[16rem] items-center justify-center p-6 text-center text-sm">
             {status === "disconnected"
               ? "Adapter offline. Start the backend, then reconnect."
