@@ -1,36 +1,139 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# AlphaSign Frontend
 
-## Getting Started
+This is the Next.js dashboard for AlphaSign. It connects to the local backend adapter, streams live Band agent activity, and renders the market snapshot, narrative cards, executive report, and PDF download.
 
-First, run the development server:
+## What This App Does
+
+The frontend is responsible for:
+
+- starting and monitoring an analysis session
+- proxying API requests to the backend adapter
+- streaming live agent messages over SSE
+- rendering the Band collaboration loop
+- showing live market data for the selected ticker
+- parsing and displaying the final executive report
+- providing a PDF download for the generated report
+
+## Main Screens And Components
+
+The page is assembled from the components under `src/components/`:
+
+- `app-shell.tsx`
+  - top-level dashboard shell and ticker entry flow
+- `agent-graph.tsx`
+  - visual Band workflow diagram
+- `agent-lanes.tsx`
+  - per-agent message lanes and filters
+- `message-stream.tsx`
+  - live transcript and protocol card viewer
+- `market-snapshot.tsx`
+  - live Yahoo Finance snapshot and chart area
+- `advanced-stock-chart.tsx`
+  - interactive chart with ranges and studies
+- `news-panel.tsx`
+  - report-provided news and narrative items
+- `recommendation-panel.tsx`
+  - executive recommendation summary
+- `report-viewer.tsx`
+  - parsed report sections and raw report toggle
+- `report-panel.tsx`
+  - final PDF download panel
+
+## Data Flow
+
+The frontend talks to the backend adapter through the Next.js route handler in:
+
+`src/app/api/alphasign/[...path]/route.ts`
+
+That proxy forwards requests to the adapter at:
+
+`http://localhost:8765`
+
+unless `ALPHASIGN_API_URL` or `NEXT_PUBLIC_ALPHASIGN_API_URL` is set.
+
+The client-side API helpers live in `src/lib/api.ts`, while the live stream and protocol parsing logic live in `src/lib/alphasign.ts`.
+
+## Runtime Behavior
+
+When you enter a ticker:
+
+1. The app validates the symbol.
+2. It starts a session through the backend adapter.
+3. The adapter creates or reuses a Band room.
+4. Agent messages stream into the transcript.
+5. Market snapshot data loads from the backend market endpoint.
+6. When the session finishes, the executive report becomes available for download.
+
+## Features
+
+- Live session status and reconnect handling
+- SSE-based transcript replay and streaming
+- Agent selection and filtering
+- Raw transcript expansion for long messages
+- Protocol card normalization and rendering
+- Live market chart with multiple ranges
+- Technical overlays:
+  - SMA 20
+  - EMA 20
+  - Bollinger Bands
+  - volume
+- Report parsing into readable sections
+- Raw report fallback when parsing is incomplete
+- PDF download link once the backend report is ready
+
+## Environment Variables
+
+The frontend understands the following environment variables:
+
+- `ALPHASIGN_API_URL`
+  - backend adapter base URL for server-side and proxy requests
+- `NEXT_PUBLIC_ALPHASIGN_API_URL`
+  - client-side base URL for browser fetches and EventSource
+
+If neither is set, the app defaults to `http://localhost:8765`.
+
+## Local Development
+
+From the `frontend/` directory:
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Then open:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```text
+http://localhost:3000
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Recommended workflow:
 
-## Learn More
+1. Start the backend adapter and agent runtime first.
+2. Start this frontend.
+3. Enter a ticker symbol on the landing screen.
+4. Watch the transcript and market panels update.
+5. Download the final report when it appears.
 
-To learn more about Next.js, take a look at the following resources:
+## Available Scripts
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Defined in `package.json`:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- `npm run dev`
+  - start the dev server with webpack
+- `npm run dev:turbo`
+  - start the dev server with Turbopack
+- `npm run build`
+  - build the production bundle
+- `npm run start`
+  - start the production server
+- `npm run lint`
+  - run ESLint
 
-## Deploy on Vercel
+## Notes
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- The app is designed to run against the AlphaSign backend adapter, not as a standalone stock app.
+- If the adapter is offline, the UI shows a disconnected or degraded state.
+- The transcript can contain both raw agent messages and normalized protocol cards.
+- The executive report is informational only and should not be treated as financial advice.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
