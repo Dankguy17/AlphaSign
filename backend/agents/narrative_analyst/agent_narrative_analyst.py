@@ -454,6 +454,23 @@ def _tool_name(tool_like: Any) -> str | None:
     return str(name) if name else None
 
 
+def _infer_tool_name_from_args(
+    args: Any,
+    tool_names: set[str],
+    send_tool_name: str | None,
+) -> str | None:
+    """Infer the Narrative tool when a provider omits its call name."""
+    if not isinstance(args, dict):
+        return None
+    if "ticker" in args and "start_narrative_research" in tool_names:
+        return "start_narrative_research"
+    if "quant_summary" in args and "incorporate_quant_findings" in tool_names:
+        return "incorporate_quant_findings"
+    if send_tool_name and "content" in args:
+        return send_tool_name
+    return None
+
+
 def _repair_tool_calls_hook(tool_names: set[str], send_tool_name: str | None):
     """
     Build a LangGraph post-model hook that prevents malformed provider tool
@@ -491,18 +508,12 @@ def _repair_tool_calls_hook(tool_names: set[str], send_tool_name: str | None):
                 repaired_calls.append(call)
                 continue
 
-            if not name and isinstance(args, dict):
-                inferred_name: str | None = None
-                if "ticker" in args and "start_narrative_research" in tool_names:
-                    inferred_name = "start_narrative_research"
-                elif (
-                    "quant_summary" in args
-                    and "incorporate_quant_findings" in tool_names
-                ):
-                    inferred_name = "incorporate_quant_findings"
-                elif send_tool_name and "content" in args:
-                    inferred_name = send_tool_name
-
+            if not name:
+                inferred_name = _infer_tool_name_from_args(
+                    args,
+                    tool_names,
+                    send_tool_name,
+                )
                 if inferred_name:
                     logger.warning(
                         "Repairing nameless tool call with args %s as %s",
@@ -641,12 +652,23 @@ class AgentWhiteboxLogger(BaseCallbackHandler):
                     print("🤖 [NARRATIVE AGENT] LLM tool decision:")
                     call_counts: dict[str, int] = {}
                     for tc in g.message.tool_calls:
-                        name = tc.get("name") or "<missing-tool-name>"
+                        raw_name = tc.get("name")
+                        name = raw_name or _infer_tool_name_from_args(
+                            tc.get("args"),
+                            {
+                                "start_narrative_research",
+                                "incorporate_quant_findings",
+                                "thenvoi_send_message",
+                            },
+                            "thenvoi_send_message",
+                        )
+                        inferred_suffix = " [inferred]" if name and not raw_name else ""
+                        name = name or "<unrecognized-nameless-tool>"
                         call_counts[name] = call_counts.get(name, 0) + 1
                         args_str = _json.dumps(tc.get("args"))
                         if len(args_str) > 300:
                             args_str = args_str[:300] + "…"
-                        print(f"   🔧 {name}({args_str})")
+                        print(f"   🔧 {name}{inferred_suffix}({args_str})")
                     for name, count in call_counts.items():
                         if count > 1:
                             print(f"   ⚠️  DUPLICATE: {name} called {count}x!")
