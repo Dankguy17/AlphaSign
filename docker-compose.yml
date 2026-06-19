@@ -1,0 +1,34 @@
+services:
+  alphasign-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: alphasign-backend
+    env_file:
+      - backend/.env
+    environment:
+      ADAPTER_PORT: ${ADAPTER_PORT:-8765}
+      ADAPTER_ALLOWED_ORIGIN: ${ADAPTER_ALLOWED_ORIGIN:-*}
+      CONVERSATION_LOG_PATH: ${CONVERSATION_LOG_PATH:-/data/alphasign_conversation.txt}
+      PDF_OUTPUT_PATH: ${PDF_OUTPUT_PATH:-/data/alphasign_report.pdf}
+    ports:
+      - "${ADAPTER_PORT:-8765}:8765"
+    volumes:
+      - ./backend/agent_config.yaml:/app/backend/agent_config.yaml:ro
+      - backend-data:/data
+    restart: unless-stopped
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: alphasign-cloudflared
+    depends_on:
+      - alphasign-backend
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    restart: unless-stopped
+    profiles:
+      - tunnel
+
+volumes:
+  backend-data:

@@ -65,3 +65,5 @@ function copyResponseHeaders(response: Response) {
   headers.set("cache-control", cacheControl ?? "no-store");
   return headers;
 }
+
+export const dynamic = "force-dynamic";

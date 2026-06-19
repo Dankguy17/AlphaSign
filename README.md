@@ -15,6 +15,9 @@ The repo contains two coordinated applications:
 - `backend/` runs the Band-connected agent system and the local adapter that feeds the UI.
 - `frontend/` is a Next.js dashboard that proxies the backend adapter, streams live updates, and renders the report.
 
+The backend can be packaged for Docker and exposed through a Cloudflare Tunnel,
+which lets the Vercel-hosted frontend talk to a local or self-hosted backend.
+
 ## What AlphaSign Does
 
 At a high level, the system works like this:
@@ -250,6 +253,48 @@ AlphaSign depends on a few external services:
    npm run dev
    ```
 
+### Docker And Portainer Deployment
+
+The repo now includes a backend Docker image and a compose file suitable for
+Portainer or plain Docker Compose.
+
+Build and run the backend:
+
+```bash
+docker compose up -d --build alphasign-backend
+```
+
+The container listens on port `8765` and stores generated runtime artifacts in
+the named `backend-data` volume. It still reads the same secrets and provider
+settings from `backend/.env`.
+
+If you want to expose that local backend to the internet for a Vercel frontend,
+enable the Cloudflare Tunnel sidecar:
+
+```bash
+docker compose --profile tunnel up -d
+```
+
+Then configure the frontend environment in Vercel to point to your public tunnel
+hostname:
+
+```text
+ALPHASIGN_API_URL=https://your-tunnel-hostname.example.com
+NEXT_PUBLIC_ALPHASIGN_API_URL=https://your-tunnel-hostname.example.com
+```
+
+Those two values should match so both the Next.js server route and the browser
+client hit the same backend origin.
+
+### Docker Files
+
+- [`Dockerfile`](Dockerfile)
+  - builds the Python backend image
+- [`docker-compose.yml`](docker-compose.yml)
+  - runs the backend and optional Cloudflare Tunnel sidecar
+- [`.dockerignore`](.dockerignore)
+  - keeps secrets, caches, and generated artifacts out of the image build context
+
 ## Running the System
 
 ### Recommended local workflow
@@ -359,4 +404,3 @@ The UI is intentionally styled as a dark, high-contrast analytical dashboard rat
 - The quality of output depends on external APIs, live market data, and current Band credentials.
 - Band agent IDs and API keys must be real, correctly configured values.
 - The executive report can only be generated once the configured session turn limit is reached.
-

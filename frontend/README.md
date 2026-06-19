@@ -51,6 +51,17 @@ That proxy forwards requests to the adapter at:
 
 unless `ALPHASIGN_API_URL` or `NEXT_PUBLIC_ALPHASIGN_API_URL` is set.
 
+For a Cloudflare Tunnel deployment, set both variables to the public tunnel URL
+instead of `localhost`, for example:
+
+```text
+ALPHASIGN_API_URL=https://alphasign-api.example.com
+NEXT_PUBLIC_ALPHASIGN_API_URL=https://alphasign-api.example.com
+```
+
+That works on Vercel because the Next.js route handler proxies server-side
+requests to the same public origin that the browser uses.
+
 The client-side API helpers live in `src/lib/api.ts`, while the live stream and protocol parsing logic live in `src/lib/alphasign.ts`.
 
 ## Runtime Behavior
@@ -91,6 +102,8 @@ The frontend understands the following environment variables:
   - client-side base URL for browser fetches and EventSource
 
 If neither is set, the app defaults to `http://localhost:8765`.
+For production, both values should usually point at the same Cloudflare Tunnel
+hostname or other public backend URL.
 
 ## Local Development
 
@@ -136,4 +149,3 @@ Defined in `package.json`:
 - If the adapter is offline, the UI shows a disconnected or degraded state.
 - The transcript can contain both raw agent messages and normalized protocol cards.
 - The executive report is informational only and should not be treated as financial advice.
-
