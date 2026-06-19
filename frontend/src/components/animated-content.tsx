@@ -19,6 +19,7 @@ type AnimatedContentProps = Omit<ComponentPropsWithoutRef<"div">, "children"> & 
   scale?: number;
   threshold?: number;
   delay?: number;
+  animateLayout?: boolean;
   disappearAfter?: number;
   disappearDuration?: number;
   disappearEase?: string;
@@ -39,6 +40,7 @@ export default function AnimatedContent({
   scale = 1,
   threshold = 0.1,
   delay = 0,
+  animateLayout = false,
   disappearAfter = 0,
   disappearDuration = 0.5,
   disappearEase = "power3.in",
@@ -48,10 +50,13 @@ export default function AnimatedContent({
   ...props
 }: AnimatedContentProps) {
   const ref = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
+    const animatedEl = animateLayout ? contentRef.current : el;
+    if (!animatedEl) return;
 
     let scrollerTarget = container ?? document.getElementById("snap-main-container");
     if (typeof scrollerTarget === "string") {
@@ -63,7 +68,11 @@ export default function AnimatedContent({
     const startPct = (1 - threshold) * 100;
     let disappearance: gsap.core.Tween | undefined;
 
-    gsap.set(el, {
+    if (animateLayout) {
+      gsap.set(el, { height: 0, overflow: "hidden", visibility: "visible" });
+    }
+
+    gsap.set(animatedEl, {
       [axis]: offset,
       scale,
       opacity: animateOpacity ? initialOpacity : 1,
@@ -76,7 +85,7 @@ export default function AnimatedContent({
       onComplete: () => {
         onComplete?.();
         if (disappearAfter > 0) {
-          disappearance = gsap.to(el, {
+          disappearance = gsap.to(animatedEl, {
             [axis]: reverse ? distance : -distance,
             scale: 0.8,
             opacity: animateOpacity ? initialOpacity : 0,
@@ -89,7 +98,10 @@ export default function AnimatedContent({
       },
     });
 
-    timeline.to(el, { [axis]: 0, scale: 1, opacity: 1, duration, ease });
+    timeline.to(animatedEl, { [axis]: 0, scale: 1, opacity: 1, duration, ease }, 0);
+    if (animateLayout) {
+      timeline.to(el, { height: "auto", duration, ease, clearProps: "height,overflow" }, 0);
+    }
 
     const trigger = ScrollTrigger.create({
       trigger: el,
@@ -116,6 +128,7 @@ export default function AnimatedContent({
     scale,
     threshold,
     delay,
+    animateLayout,
     disappearAfter,
     disappearDuration,
     disappearEase,
@@ -125,7 +138,7 @@ export default function AnimatedContent({
 
   return (
     <div ref={ref} className={`invisible ${className}`} {...props}>
-      {children}
+      {animateLayout ? <div ref={contentRef}>{children}</div> : children}
     </div>
   );
 }

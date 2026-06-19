@@ -31,7 +31,7 @@ export function AgentGraph({
   }, {});
 
   return (
-    <section className="panel p-5">
+    <section className="panel agent-workflow-card p-5">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="panel-title">Agent workflow</h2>
@@ -42,7 +42,7 @@ export function AgentGraph({
         <span className="chip">{messages.length} messages</span>
       </div>
 
-      <div className="inset mt-4 overflow-hidden">
+      <div className="agent-workflow-canvas mt-4 overflow-hidden">
         <svg
           viewBox="0 0 760 256"
           role="img"
@@ -50,6 +50,20 @@ export function AgentGraph({
           className="h-64 w-full"
         >
           <defs>
+            <radialGradient id="workflow-glow" cx="50%" cy="42%" r="65%">
+              <stop offset="0" stopColor="var(--primary)" stopOpacity=".12" />
+              <stop offset="1" stopColor="var(--primary)" stopOpacity="0" />
+            </radialGradient>
+            <linearGradient id="node-surface" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stopColor="#202126" />
+              <stop offset="1" stopColor="#16171a" />
+            </linearGradient>
+            <filter id="active-glow" x="-40%" y="-70%" width="180%" height="240%">
+              <feGaussianBlur stdDeviation="6" result="blur" />
+              <feFlood floodColor="var(--primary)" floodOpacity=".28" />
+              <feComposite in2="blur" operator="in" />
+              <feMerge><feMergeNode /><feMergeNode in="SourceGraphic" /></feMerge>
+            </filter>
             <marker
               id="arrow"
               viewBox="0 0 10 10"
@@ -74,6 +88,8 @@ export function AgentGraph({
             </marker>
           </defs>
 
+          <rect width="760" height="256" fill="url(#workflow-glow)" />
+
           {/* Forward edges */}
           <line
             x1={POS.narrative_analyst.x + NODE.w}
@@ -83,6 +99,7 @@ export function AgentGraph({
             stroke="var(--primary-line)"
             strokeWidth={1.5}
             markerEnd="url(#arrow)"
+            className="workflow-route"
           />
           <line
             x1={POS.signal_processing.x + NODE.w}
@@ -92,6 +109,7 @@ export function AgentGraph({
             stroke="var(--primary-line)"
             strokeWidth={1.5}
             markerEnd="url(#arrow)"
+            className="workflow-route workflow-route--delay"
           />
           {/* Return loop: Latent → Narrative, arcing over the top */}
           <path
@@ -104,6 +122,7 @@ export function AgentGraph({
             strokeWidth={1.5}
             strokeDasharray="5 5"
             markerEnd="url(#arrow)"
+            className="workflow-route workflow-route--return"
           />
           {/* Latent → Report */}
           <line
@@ -114,7 +133,26 @@ export function AgentGraph({
             stroke={reportReady ? "var(--primary-line)" : "var(--hairline)"}
             strokeWidth={1.5}
             markerEnd={reportReady ? "url(#arrow)" : "url(#arrow-muted)"}
+            className={reportReady ? "workflow-route" : ""}
           />
+
+          <g className="workflow-particles" aria-hidden="true">
+            {activeAgent === "narrative_analyst" && (
+              <circle r="3.5" fill="var(--primary-hover)">
+                <animateMotion dur="1.8s" repeatCount="indefinite" path="M204 90 L290 90" />
+              </circle>
+            )}
+            {activeAgent === "signal_processing" && (
+              <circle r="3.5" fill="var(--primary-hover)">
+                <animateMotion dur="1.8s" repeatCount="indefinite" path="M464 90 L550 90" />
+              </circle>
+            )}
+            {activeAgent === "latent_state" && (
+              <circle r="3" fill="var(--primary-hover)">
+                <animateMotion dur="2.2s" repeatCount="indefinite" path="M640 120 L444 178" />
+              </circle>
+            )}
+          </g>
 
           {AGENTS.map((agent) => {
             const pos = POS[agent.id];
@@ -131,7 +169,7 @@ export function AgentGraph({
             return (
               <g
                 key={agent.id}
-                className="cursor-pointer"
+                className={`workflow-node cursor-pointer ${isActive ? "workflow-node--active" : ""}`}
                 onClick={() => onSelect(isSelected ? "all" : agent.id)}
               >
                 <rect
@@ -140,9 +178,10 @@ export function AgentGraph({
                   width={NODE.w}
                   height={NODE.h}
                   rx={10}
-                  fill={isActive ? "var(--primary-soft)" : "var(--surface-3)"}
+                  fill={isActive ? "var(--primary-soft)" : "url(#node-surface)"}
                   stroke={stroke}
                   strokeWidth={isActive || isSelected ? 1.6 : 1}
+                  filter={isActive ? "url(#active-glow)" : undefined}
                 />
                 <text
                   x={pos.x + 18}
@@ -176,7 +215,7 @@ export function AgentGraph({
             width={REPORT.w}
             height={REPORT.h}
             rx={10}
-            fill={reportReady ? "var(--primary-soft)" : "var(--surface-3)"}
+            fill={reportReady ? "var(--primary-soft)" : "url(#node-surface)"}
             stroke={reportReady ? "var(--primary)" : "var(--hairline-strong)"}
             strokeWidth={reportReady ? 1.6 : 1}
           />

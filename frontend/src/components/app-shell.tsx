@@ -6,6 +6,7 @@ import { AgentLanes } from "@/components/agent-lanes";
 import { MessageStream } from "@/components/message-stream";
 import { MarketSnapshot } from "@/components/market-snapshot";
 import { ReportPanel } from "@/components/report-panel";
+import AnimatedContent from "@/components/animated-content";
 import DarkVeil from "@/components/dark-veil";
 import { useAlphaSignStream, type StreamStatus } from "@/hooks/use-alphasign-stream";
 import { ALPHASIGN_BASE_URL, AgentId, relativeTime } from "@/lib/alphasign";
@@ -20,6 +21,8 @@ export function AppShell() {
   const [ticker, setTicker] = useState<string | null>(null);
   const [marketTicker, setMarketTicker] = useState<string | null>(null);
   const previewTimer = useRef<number | null>(null);
+  const workflowHideTimer = useRef<number | null>(null);
+  const [showWorkflow, setShowWorkflow] = useState(false);
   const [maxTurns, setMaxTurns] = useState(3);
   const [savingTurns, setSavingTurns] = useState(false);
   const [turnsStatus, setTurnsStatus] = useState<string | null>(null);
@@ -82,6 +85,7 @@ export function AppShell() {
 
   useEffect(() => () => {
     if (previewTimer.current) window.clearTimeout(previewTimer.current);
+    if (workflowHideTimer.current) window.clearTimeout(workflowHideTimer.current);
   }, []);
 
   function handleTickerInput(value: string) {
@@ -106,6 +110,32 @@ export function AppShell() {
   const activeAgent: AgentId | null =
     messages.length > 0 ? messages[messages.length - 1].agent : null;
   const effectiveRoomId = roomId ?? messages.at(-1)?.room_id ?? null;
+  const analysisRunning = sendingTicker || Boolean(roomId && !reportReady && !roomClosed);
+  const sessionMessageCount = roomId
+    ? messages.filter((message) => message.room_id === roomId).length
+    : 0;
+  const analysisProgress = Math.min(
+    96,
+    Math.max(sendingTicker ? 6 : 12, Math.round((sessionMessageCount / (maxTurns * 3)) * 100)),
+  );
+
+  useEffect(() => {
+    if (workflowHideTimer.current) {
+      window.clearTimeout(workflowHideTimer.current);
+      workflowHideTimer.current = null;
+    }
+
+    if (analysisRunning) {
+      return;
+    }
+
+    if (showWorkflow) {
+      workflowHideTimer.current = window.setTimeout(() => {
+        setShowWorkflow(false);
+        workflowHideTimer.current = null;
+      }, 5_000);
+    }
+  }, [analysisRunning, showWorkflow]);
 
   async function handleReset() {
     if (!window.confirm("Clear the current session history on the adapter?")) return;
@@ -123,6 +153,7 @@ export function AppShell() {
     event.preventDefault();
     const normalized = tickerInput.trim().toUpperCase();
     if (!/^[A-Z][A-Z0-9.-]{0,9}$/.test(normalized)) return;
+    setShowWorkflow(true);
     setSendingTicker(true);
     setTickerStatus(null);
     setRoomStatus(null);
@@ -266,14 +297,6 @@ export function AppShell() {
                 {closingRoom ? "Closing room…" : "Close Band room"}
               </button>
             ) : null}
-            <button
-              type="button"
-              onClick={handleReset}
-              disabled={resetting}
-              className="btn-secondary px-3 py-1.5 text-xs"
-            >
-              {resetting ? "Resetting…" : "Reset session"}
-            </button>
           </div>
         </div>
       </header>
@@ -309,7 +332,7 @@ export function AppShell() {
                   title="Enter a ticker such as AAPL or BRK.B"
                   className="h-10 min-w-0 flex-1 rounded-md border border-[var(--hairline-strong)] bg-[var(--surface-2)] px-3 font-mono text-sm font-medium uppercase text-[var(--ink)] placeholder:text-[var(--ink-tertiary)] focus:border-[var(--primary-focus)] sm:w-40"
                 />
-                {sendingTicker || (roomId && !reportReady && !roomClosed) ? (
+                {analysisRunning ? (
                   <div className="analysis-progress" role="progressbar" aria-label="AlphaSign analysis in progress">
                     <span />
                   </div>
@@ -325,6 +348,24 @@ export function AppShell() {
                 {roomStatus ? (
                   <span className="text-xs text-[var(--ink-subtle)]">{roomStatus}</span>
                 ) : null}
+                {analysisRunning ? (
+                  <div
+                    className="analysis-run-status"
+                    role="progressbar"
+                    aria-label="AlphaSign agent analysis in progress"
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={analysisProgress}
+                  >
+                    <div className="analysis-run-copy">
+                      <span>Running AlphaSign agents</span>
+                      <span>{analysisProgress}%</span>
+                    </div>
+                    <div className="analysis-run-track">
+                      <span style={{ width: `${analysisProgress}%` }} />
+                    </div>
+                  </div>
+                ) : (
                 <form className="flex items-center gap-2" onSubmit={handleTurnsSubmit}>
                 <label htmlFor="max-turns" className="text-xs text-[var(--ink-subtle)]">
                   Turns
@@ -345,6 +386,7 @@ export function AppShell() {
                   {turnsStatus ?? "Maximum 3"}
                 </span>
                 </form>
+                )}
               </div>
             </div>
           </section>
@@ -369,30 +411,80 @@ export function AppShell() {
             <MarketSnapshot market={market} loading={marketLoading} error={marketError} />
           ) : null}
 
-          <AgentGraph
-            messages={messages}
-            reportReady={reportReady}
-            activeAgent={activeAgent}
-            selected={selected}
-            onSelect={setSelected}
-          />
-          <MessageStream
-            messages={messages}
-            cards={cards}
-            selected={selected}
-            onSelect={setSelected}
-            status={status}
-          />
+          {showWorkflow ? (
+            <AgentGraph
+              messages={messages}
+              reportReady={reportReady}
+              activeAgent={activeAgent ?? (analysisRunning ? "narrative_analyst" : null)}
+              selected={selected}
+              onSelect={setSelected}
+            />
+          ) : null}
+          {messages.length > 0 || cards.length > 0 || reportReady ? (
+            <AnimatedContent
+              distance={100}
+              direction="vertical"
+              reverse={false}
+              duration={1.6}
+              ease="power3.out"
+              initialOpacity={0}
+              animateOpacity
+              scale={0.7}
+              threshold={0.4}
+              delay={0}
+              animateLayout
+            >
+              <MessageStream
+                messages={messages}
+                cards={cards}
+                selected={selected}
+                onSelect={setSelected}
+                status={status}
+              />
+            </AnimatedContent>
+          ) : null}
         </div>
 
         <aside className="space-y-6">
-          <AgentLanes
-            messages={messages}
-            activeAgent={activeAgent}
-            selected={selected}
-            onSelect={setSelected}
-          />
-          <ReportPanel reportReady={reportReady} reportTs={reportTs} />
+          {reportReady ? (
+            <AnimatedContent
+              distance={100}
+              direction="vertical"
+              reverse={false}
+              duration={1.6}
+              ease="power3.out"
+              initialOpacity={0}
+              animateOpacity
+              scale={0.7}
+              threshold={0.4}
+              delay={0}
+              animateLayout
+            >
+              <ReportPanel reportTs={reportTs} />
+            </AnimatedContent>
+          ) : null}
+          {messages.length > 0 || reportReady ? (
+            <AnimatedContent
+              distance={100}
+              direction="vertical"
+              reverse={false}
+              duration={1.6}
+              ease="power3.out"
+              initialOpacity={0}
+              animateOpacity
+              scale={0.7}
+              threshold={0.4}
+              delay={0}
+              animateLayout
+            >
+              <AgentLanes
+                messages={messages}
+                activeAgent={activeAgent}
+                selected={selected}
+                onSelect={setSelected}
+              />
+            </AnimatedContent>
+          ) : null}
           <section className="panel p-5">
             <h2 className="panel-title">Connection</h2>
             <p className="mt-2.5 break-all font-mono text-xs leading-5 text-[var(--ink-subtle)]">
@@ -423,6 +515,14 @@ export function AppShell() {
         </aside>
       </div>
     </main>
+      <button
+        type="button"
+        onClick={handleReset}
+        disabled={resetting}
+        className="btn-secondary fixed bottom-4 right-4 z-[70] px-3 py-1.5 text-xs opacity-40 transition-opacity hover:opacity-100 focus-visible:opacity-100 disabled:opacity-30"
+      >
+        {resetting ? "Resetting…" : "Reset session"}
+      </button>
     </>
   );
 }
