@@ -19,33 +19,31 @@ export function SignalCharts({ market, report }: SignalChartsProps) {
   const hasSignals = Object.keys(signals).length > 0;
 
   return (
-    <section className="rounded-lg border border-[var(--border)] bg-white p-4 shadow-sm">
+    <section className="panel p-5">
       <div>
-        <h2 className="text-sm font-semibold text-slate-950">Signals and confidence</h2>
-        <p className="text-xs text-slate-500">
-          Quantitative indicators supplied by the final report.
-        </p>
+        <h2 className="panel-title">Signals &amp; confidence</h2>
+        <p className="panel-sub mt-1.5">Quantitative indicators supplied by the final report.</p>
       </div>
       {!hasSignals ? (
-        <div className="mt-4 rounded-md border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-500">
+        <div className="empty-well mt-4 p-6 text-sm">
           Signal metrics will populate after the executive report is available.
         </div>
       ) : (
-        <div className="mt-4 grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
-          <div className="space-y-3">
+        <div className="mt-4 grid gap-5 lg:grid-cols-[1.2fr_0.8fr]">
+          <div className="space-y-3.5">
             {metricLabels.map(([key, label]) => {
               const value = signals[key];
               if (typeof value !== "number") return null;
               const normalized = normalizeMetric(key, value);
               return (
                 <div key={key}>
-                  <div className="mb-1 flex items-center justify-between text-xs">
-                    <span className="font-medium text-slate-600">{label}</span>
-                    <span className="font-mono text-slate-900">{value.toFixed(2)}</span>
+                  <div className="mb-1.5 flex items-center justify-between text-xs">
+                    <span className="font-medium text-[var(--ink-subtle)]">{label}</span>
+                    <span className="font-mono text-[var(--ink)]">{value.toFixed(2)}</span>
                   </div>
-                  <div className="h-2 rounded-full bg-slate-100">
+                  <div className="h-1.5 overflow-hidden rounded-full bg-[var(--surface-3)]">
                     <div
-                      className="h-2 rounded-full bg-[var(--alpha-700)]"
+                      className="h-full rounded-full bg-[var(--primary)]"
                       style={{ width: `${normalized}%` }}
                     />
                   </div>
@@ -57,7 +55,7 @@ export function SignalCharts({ market, report }: SignalChartsProps) {
         </div>
       )}
       {market ? (
-        <div className="mt-4 text-xs text-slate-500">
+        <div className="mt-4 text-[11px] text-[var(--ink-tertiary)]">
           Market context: {market.ticker} sourced from {market.source}.
         </div>
       ) : null}
@@ -69,32 +67,26 @@ function ConfidenceGauge({ confidence }: { confidence: number }) {
   const value = Math.max(0, Math.min(1, confidence));
   const circumference = 2 * Math.PI * 42;
   return (
-    <div className="flex min-h-44 items-center justify-center rounded-md border border-slate-200 bg-slate-50">
+    <div className="inset flex min-h-44 items-center justify-center">
       <svg viewBox="0 0 120 120" className="h-36 w-36" role="img" aria-label="Confidence">
+        <circle cx="60" cy="60" r="42" fill="none" stroke="var(--surface-3)" strokeWidth="10" />
         <circle
           cx="60"
           cy="60"
           r="42"
           fill="none"
-          stroke="#e2e8f0"
-          strokeWidth="12"
-        />
-        <circle
-          cx="60"
-          cy="60"
-          r="42"
-          fill="none"
-          stroke="var(--alpha-700)"
+          stroke="var(--primary)"
           strokeLinecap="round"
-          strokeWidth="12"
+          strokeWidth="10"
           strokeDasharray={`${circumference * value} ${circumference}`}
           transform="rotate(-90 60 60)"
         />
         <text
           x="60"
-          y="58"
+          y="59"
           textAnchor="middle"
-          className="fill-slate-950 text-xl font-bold"
+          className="fill-[var(--ink)] text-[22px] font-semibold"
+          style={{ letterSpacing: "-0.04em" }}
         >
           {Math.round(value * 100)}
         </text>
@@ -102,7 +94,8 @@ function ConfidenceGauge({ confidence }: { confidence: number }) {
           x="60"
           y="77"
           textAnchor="middle"
-          className="fill-slate-500 text-[10px] font-medium"
+          className="fill-[var(--ink-subtle)] text-[10px] font-medium uppercase"
+          style={{ letterSpacing: "0.4px" }}
         >
           confidence
         </text>

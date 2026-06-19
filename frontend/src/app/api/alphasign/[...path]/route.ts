@@ -3,7 +3,7 @@ import { NextRequest } from "next/server";
 const adapterBaseUrl =
   process.env.ALPHASIGN_API_URL?.replace(/\/$/, "") ??
   process.env.NEXT_PUBLIC_ALPHASIGN_API_URL?.replace(/\/$/, "") ??
-  "http://localhost:8000";
+  "http://localhost:8765";
 
 type RouteContext = {
   params: Promise<{ path: string[] }>;

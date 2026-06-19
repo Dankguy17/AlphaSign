@@ -13,8 +13,12 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "AlphaSign",
+  title: "AlphaSign — Financial Intelligence",
   description: "Operator-grade financial intelligence workspace",
+};
+
+export const viewport = {
+  themeColor: "#010102",
 };
 
 export default function RootLayout({

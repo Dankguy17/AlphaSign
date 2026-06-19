@@ -8,11 +8,11 @@ type MarketSnapshotProps = {
 export function MarketSnapshot({ market }: MarketSnapshotProps) {
   if (!market) {
     return (
-      <section className="rounded-lg border border-[var(--border)] bg-white p-4 shadow-sm">
+      <section className="panel p-5">
         <PanelHeading title="Market snapshot" subtitle="Waiting for ticker data" />
-        <div className="mt-6 rounded-md border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-500">
-          Market data will load from `GET /api/market/:ticker` once the adapter is
-          available.
+        <div className="empty-well mt-4 p-6 text-sm">
+          Market data loads from <span className="font-mono">GET /api/market/:ticker</span> once
+          the adapter is available.
         </div>
       </section>
     );
@@ -21,28 +21,51 @@ export function MarketSnapshot({ market }: MarketSnapshotProps) {
   const positive = market.change >= 0;
 
   return (
-    <section className="rounded-lg border border-[var(--border)] bg-white p-4 shadow-sm">
+    <section className="panel p-5">
       <PanelHeading
         title="Market snapshot"
-        subtitle={`${market.source} as of ${formatDateTime(market.as_of)}`}
+        subtitle={`${market.source} · ${formatDateTime(market.as_of)}`}
       />
-      <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Metric label="Ticker" value={market.ticker} mono />
-        <Metric label="Last price" value={formatCurrency(market.price)} />
-        <Metric
-          label="Day move"
-          value={`${positive ? "+" : ""}${formatCurrency(market.change)} (${positive ? "+" : ""}${market.change_percent.toFixed(2)}%)`}
-          tone={positive ? "positive" : "negative"}
-        />
+
+      <div className="mt-4 flex flex-wrap items-end justify-between gap-4">
+        <div className="min-w-0">
+          <div className="flex items-baseline gap-2.5">
+            <span className="font-mono text-[15px] font-medium text-[var(--ink)]">
+              {market.ticker}
+            </span>
+            <span className="truncate text-xs text-[var(--ink-subtle)]">{market.name}</span>
+          </div>
+          <div className="mt-1.5 display text-[40px] leading-none">
+            {formatCurrency(market.price)}
+          </div>
+        </div>
+        <span
+          className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm font-medium ${
+            positive
+              ? "bg-[color-mix(in_srgb,var(--positive)_14%,transparent)] text-[var(--positive)]"
+              : "bg-[color-mix(in_srgb,var(--negative)_14%,transparent)] text-[var(--negative)]"
+          }`}
+        >
+          {positive ? "▲" : "▼"}
+          {positive ? "+" : ""}
+          {formatCurrency(market.change)}
+          <span className="opacity-70">
+            ({positive ? "+" : ""}
+            {market.change_percent.toFixed(2)}%)
+          </span>
+        </span>
+      </div>
+
+      <div className="mt-4 grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
         <Metric label="Volume" value={formatCompactNumber(market.volume)} />
         <Metric label="Market cap" value={formatCompactNumber(market.market_cap)} />
         <Metric
           label="52-week range"
-          value={`${formatCurrency(market.fifty_two_week_low)} - ${formatCurrency(market.fifty_two_week_high)}`}
+          value={`${formatCurrency(market.fifty_two_week_low)} – ${formatCurrency(market.fifty_two_week_high)}`}
+          wide
         />
-        <Metric label="Company" value={market.name} wide />
       </div>
-      <PriceSparkline data={market.history} positive={positive} />
+      <PriceSparkline data={market.history} />
     </section>
   );
 }
@@ -50,8 +73,8 @@ export function MarketSnapshot({ market }: MarketSnapshotProps) {
 function PanelHeading({ title, subtitle }: { title: string; subtitle: string }) {
   return (
     <div>
-      <h2 className="text-sm font-semibold text-slate-950">{title}</h2>
-      <p className="text-xs text-slate-500">{subtitle}</p>
+      <h2 className="panel-title">{title}</h2>
+      <p className="panel-sub mt-2">{subtitle}</p>
     </div>
   );
 }
@@ -59,30 +82,21 @@ function PanelHeading({ title, subtitle }: { title: string; subtitle: string }) 
 function Metric({
   label,
   value,
-  tone,
   mono,
   wide,
 }: {
   label: string;
   value: string;
-  tone?: "positive" | "negative";
   mono?: boolean;
   wide?: boolean;
 }) {
-  const toneClass =
-    tone === "positive"
-      ? "text-[var(--positive)]"
-      : tone === "negative"
-        ? "text-[var(--negative)]"
-        : "text-slate-950";
-
   return (
-    <div
-      className={`min-h-20 rounded-md border border-slate-200 bg-slate-50 p-3 ${wide ? "sm:col-span-2" : ""}`}
-    >
-      <div className="text-xs font-medium text-slate-500">{label}</div>
+    <div className={`inset min-h-[68px] p-3 ${wide ? "sm:col-span-2" : ""}`}>
+      <div className="text-[11px] font-medium uppercase tracking-wide text-[var(--ink-subtle)]">
+        {label}
+      </div>
       <div
-        className={`mt-2 break-words text-sm font-semibold ${toneClass} ${mono ? "font-mono" : ""}`}
+        className={`mt-2 break-words text-sm font-medium text-[var(--ink)] ${mono ? "font-mono" : ""}`}
       >
         {value}
       </div>
@@ -90,13 +104,7 @@ function Metric({
   );
 }
 
-function PriceSparkline({
-  data,
-  positive,
-}: {
-  data: { date: string; close: number }[];
-  positive: boolean;
-}) {
+function PriceSparkline({ data }: { data: { date: string; close: number }[] }) {
   if (data.length < 2) return null;
   const width = 720;
   const height = 180;
@@ -104,15 +112,17 @@ function PriceSparkline({
   const min = Math.min(...values);
   const max = Math.max(...values);
   const range = max - min || 1;
-  const points = data.map((point, index) => {
+  const coords = data.map((point, index) => {
     const x = (index / (data.length - 1)) * width;
     const y = height - ((point.close - min) / range) * (height - 24) - 12;
-    return `${x},${y}`;
+    return [x, y] as const;
   });
+  const line = coords.map(([x, y]) => `${x},${y}`).join(" ");
+  const area = `0,${height} ${line} ${width},${height}`;
 
   return (
-    <div className="mt-4 h-56 rounded-md border border-slate-200 bg-white p-3">
-      <div className="mb-2 flex items-center justify-between text-xs text-slate-500">
+    <div className="inset mt-4 p-3.5">
+      <div className="mb-2 flex items-center justify-between text-xs text-[var(--ink-subtle)]">
         <span>Price history</span>
         <span className="font-mono">
           {formatCurrency(min)} / {formatCurrency(max)}
@@ -125,13 +135,15 @@ function PriceSparkline({
         className="h-44 w-full"
         preserveAspectRatio="none"
       >
+        <polygon points={area} fill="var(--primary-soft)" />
         <polyline
-          points={points.join(" ")}
+          points={line}
           fill="none"
-          stroke={positive ? "var(--alpha-700)" : "var(--negative)"}
-          strokeWidth="4"
+          stroke="var(--primary)"
+          strokeWidth="3"
           strokeLinecap="round"
           strokeLinejoin="round"
+          vectorEffect="non-scaling-stroke"
         />
       </svg>
     </div>

@@ -9,35 +9,33 @@ export function NewsPanel({ report }: NewsPanelProps) {
   const news = report?.news ?? [];
 
   return (
-    <section className="rounded-lg border border-[var(--border)] bg-white p-4 shadow-sm">
+    <section className="panel p-5">
       <div>
-        <h2 className="text-sm font-semibold text-slate-950">News and narrative</h2>
-        <p className="text-xs text-slate-500">Backend-provided headlines and themes.</p>
+        <h2 className="panel-title">News &amp; narrative</h2>
+        <p className="panel-sub mt-1.5">Backend-provided headlines and themes.</p>
       </div>
       {news.length === 0 ? (
-        <div className="mt-4 rounded-md border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-500">
+        <div className="empty-well mt-4 p-6 text-sm">
           News items will appear when the adapter includes report news payloads.
         </div>
       ) : (
-        <ul className="mt-4 space-y-3">
+        <ul className="mt-4 space-y-2.5">
           {news.map((item, index) => (
-            <li
-              key={item.id ?? `${item.headline}-${index}`}
-              className="rounded-md border border-slate-200 bg-slate-50 p-3"
-            >
-              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                <span>{item.source ?? "Unknown source"}</span>
+            <li key={item.id ?? `${item.headline}-${index}`} className="inset p-3.5">
+              <div className="flex flex-wrap items-center gap-2 text-[11px] text-[var(--ink-subtle)]">
+                <span className="text-[var(--ink-muted)]">{item.source ?? "Unknown source"}</span>
+                <span aria-hidden>·</span>
                 <span>{formatDateTime(item.published_at)}</span>
                 {item.sentiment ? (
-                  <span className={`rounded px-1.5 py-0.5 ${sentimentClass(item.sentiment)}`}>
+                  <span className={`rounded-md px-1.5 py-0.5 ${sentimentClass(item.sentiment)}`}>
                     {item.sentiment}
                   </span>
                 ) : null}
               </div>
-              <h3 className="mt-2 text-sm font-semibold leading-6 text-slate-900">
+              <h3 className="mt-2 text-[13px] font-medium leading-6 text-[var(--ink)]">
                 {item.headline}
               </h3>
-              <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500">
+              <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-[var(--ink-subtle)]">
                 {item.reliability ? <span>Reliability: {item.reliability}</span> : null}
                 {typeof item.relevance === "number" ? (
                   <span>Relevance: {Math.round(item.relevance * 100)}%</span>
@@ -53,8 +51,11 @@ export function NewsPanel({ report }: NewsPanelProps) {
 }
 
 function sentimentClass(sentiment: string) {
-  if (sentiment === "positive") return "bg-green-100 text-green-800";
-  if (sentiment === "negative") return "bg-red-100 text-red-800";
-  if (sentiment === "mixed") return "bg-amber-100 text-amber-800";
-  return "bg-slate-200 text-slate-700";
+  if (sentiment === "positive")
+    return "bg-[color-mix(in_srgb,var(--positive)_16%,transparent)] text-[var(--positive)]";
+  if (sentiment === "negative")
+    return "bg-[color-mix(in_srgb,var(--negative)_16%,transparent)] text-[var(--negative)]";
+  if (sentiment === "mixed")
+    return "bg-[color-mix(in_srgb,var(--warning)_16%,transparent)] text-[var(--warning)]";
+  return "bg-[var(--surface-3)] text-[var(--ink-muted)]";
 }

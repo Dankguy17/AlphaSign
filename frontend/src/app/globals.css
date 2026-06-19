@@ -1,38 +1,110 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f8fafc;
-  --foreground: #0f172a;
-  --panel: #ffffff;
-  --panel-muted: #f1f5f9;
-  --border: #dbe3ee;
-  --muted: #64748b;
-  --alpha-50: #e3f2fd;
-  --alpha-100: #bbdefb;
-  --alpha-200: #90caf9;
-  --alpha-300: #64b5f6;
-  --alpha-400: #42a5f5;
-  --alpha-500: #2196f3;
-  --alpha-600: #1e88e5;
-  --alpha-700: #1976d2;
-  --alpha-800: #1565c0;
-  --alpha-900: #0d47a1;
-  --positive: #15803d;
-  --negative: #b91c1c;
-  --warning: #b45309;
+  /* ── Linear surface ladder ───────────────────────────── */
+  --canvas: #010102;
+  --surface-1: #0f1011;
+  --surface-2: #141516;
+  --surface-3: #18191a;
+  --surface-4: #191a1b;
+
+  /* ── Hairlines ───────────────────────────────────────── */
+  --hairline: #23252a;
+  --hairline-strong: #34343a;
+  --hairline-tertiary: #3e3e44;
+
+  /* ── Ink ─────────────────────────────────────────────── */
+  --ink: #f7f8f8;
+  --ink-muted: #d0d6e0;
+  --ink-subtle: #8a8f98;
+  --ink-tertiary: #62666d;
+
+  /* ── Brand accent: lavender-blue (the single chroma) ─── */
+  --primary: #5e6ad2;
+  --primary-hover: #828fff;
+  --primary-focus: #5e69d1;
+  --on-primary: #ffffff;
+  --primary-soft: rgba(94, 106, 210, 0.14);
+  --primary-line: rgba(94, 106, 210, 0.28);
+
+  /* ── Financial semantics (restrained, in-product only) ─ */
+  --positive: #2fbf71;
+  --negative: #eb5757;
+  --warning: #e2a336;
+
+  --background: var(--canvas);
+  --foreground: var(--ink);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: "Geist", "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
+  --color-background: var(--canvas);
+  --color-foreground: var(--ink);
+  --color-canvas: var(--canvas);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-hairline: var(--hairline);
+  --color-hairline-strong: var(--hairline-strong);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-subtle: var(--ink-subtle);
+  --color-ink-tertiary: var(--ink-tertiary);
+  --color-primary: var(--primary);
+  --color-positive: var(--positive);
+  --color-negative: var(--negative);
+  --color-warning: var(--warning);
+  --font-sans: "Geist", "Geist Fallback", "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "Geist Mono", "Geist Mono Fallback", ui-monospace, monospace;
 }
 
+html {
+  background: var(--canvas);
+  color-scheme: dark;
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: "Geist", "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Subtle living gradient behind the whole app — slow-drifting lavender
+   aurora at low opacity. Stays minimal; panels paint solid on top. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: -25%;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(38% 38% at 18% 16%, rgba(94, 106, 210, 0.16), transparent 72%),
+    radial-gradient(34% 34% at 82% 26%, rgba(94, 106, 210, 0.10), transparent 72%),
+    radial-gradient(46% 46% at 62% 92%, rgba(94, 106, 210, 0.12), transparent 72%);
+  filter: blur(36px);
+  animation: aurora-drift 26s ease-in-out infinite alternate;
+}
+
+@keyframes aurora-drift {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.85;
+  }
+  50% {
+    transform: translate3d(2.5%, -2%, 0) scale(1.1);
+    opacity: 1;
+  }
+  100% {
+    transform: translate3d(-2%, 2.5%, 0) scale(1.05);
+    opacity: 0.8;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body::before {
+    animation: none;
+  }
 }
 
 button,
@@ -42,14 +114,173 @@ select {
   font: inherit;
 }
 
+/* Linear-style focus: 2px lavender ring */
 button:focus-visible,
 input:focus-visible,
+a:focus-visible,
 summary:focus-visible {
-  outline: 3px solid var(--alpha-200);
+  outline: 2px solid var(--primary-focus);
   outline-offset: 2px;
+  border-radius: 8px;
 }
 
 ::selection {
-  background: var(--alpha-100);
-  color: var(--alpha-900);
+  background: var(--primary-soft);
+  color: var(--ink);
+}
+
+/* ── Dark, slim scrollbars ───────────────────────────────── */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--hairline-strong) transparent;
+}
+*::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--hairline-strong);
+  border-radius: 9999px;
+  border: 2px solid var(--canvas);
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ─────────────────────────────────────────────────────────
+   Reusable Linear primitives
+   ───────────────────────────────────────────────────────── */
+
+/* Charcoal panel lifted off the canvas with a hairline + faint
+   top-edge highlight ("pixel rendered" feel) — never a shadow. */
+.panel {
+  position: relative;
+  background: var(--surface-1);
+  border: 1px solid var(--hairline-strong);
+  border-radius: 14px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 1px 2px rgba(0, 0, 0, 0.5),
+    0 14px 40px -22px rgba(0, 0, 0, 0.85);
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+.panel:hover {
+  border-color: var(--hairline-tertiary);
+}
+
+/* A nested surface one rung up the ladder. */
+.inset {
+  background: var(--surface-2);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+}
+
+/* Section taxonomy label — positive tracking marks it as an eyebrow. */
+.eyebrow {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--ink-subtle);
+}
+
+/* Prominent panel title with a lavender accent tick — the primary way
+   one panel announces itself as distinct from its neighbour. */
+.panel-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  line-height: 1.1;
+}
+.panel-title::before {
+  content: "";
+  width: 3px;
+  height: 16px;
+  border-radius: 2px;
+  background: var(--primary);
+  box-shadow: 0 0 10px var(--primary-line);
+}
+
+.panel-sub {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--ink-subtle);
+}
+
+/* Display headings pull tracking aggressively negative. */
+.display {
+  letter-spacing: -0.03em;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* Dashed empty-state well. */
+.empty-well {
+  border: 1px dashed var(--hairline-strong);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.012);
+  color: var(--ink-subtle);
+}
+
+/* Primary lavender CTA. */
+.btn-primary {
+  background: var(--primary);
+  color: var(--on-primary);
+  border-radius: 8px;
+  font-weight: 500;
+  transition: background 120ms ease;
+}
+.btn-primary:hover:not(:disabled) {
+  background: var(--primary-hover);
+}
+.btn-primary:active:not(:disabled) {
+  background: var(--primary-focus);
+}
+.btn-primary:disabled {
+  background: var(--surface-3);
+  color: var(--ink-tertiary);
+  cursor: not-allowed;
+}
+
+/* Charcoal secondary button. */
+.btn-secondary {
+  background: var(--surface-2);
+  color: var(--ink);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  font-weight: 500;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+.btn-secondary:hover:not(:disabled) {
+  border-color: var(--hairline-strong);
+  background: var(--surface-3);
+}
+.btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Pill chip on surface-2. */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--hairline);
+  color: var(--ink-muted);
+  border-radius: 9999px;
+  font-size: 12px;
+  padding: 3px 10px;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+.live-dot {
+  animation: pulse-dot 1.6s ease-in-out infinite;
 }

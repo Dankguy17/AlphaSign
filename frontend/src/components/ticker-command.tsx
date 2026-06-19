@@ -63,12 +63,12 @@ export function TickerCommand({
   }
 
   return (
-    <section className="rounded-lg border border-[var(--border)] bg-white p-4 shadow-sm">
-      <div className="mb-3 flex items-center justify-between gap-3">
+    <section className="panel p-5">
+      <div className="mb-4 flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-sm font-semibold text-slate-950">Start analysis</h2>
-          <p className="text-xs text-slate-500">
-            Submit a ticker to the future backend adapter.
+          <h2 className="panel-title">Start analysis</h2>
+          <p className="panel-sub mt-1.5">
+            Submit a ticker to launch a Band agent session.
           </p>
         </div>
       </div>
@@ -82,30 +82,30 @@ export function TickerCommand({
           maxLength={10}
           onChange={(event) => setTicker(event.target.value.toUpperCase())}
           placeholder="AAPL"
-          className="h-11 min-w-0 flex-1 rounded-md border border-slate-300 bg-white px-3 font-mono text-base font-semibold tracking-normal text-slate-950 shadow-inner"
+          className="h-11 min-w-0 flex-1 rounded-md border border-[var(--hairline-strong)] bg-[var(--surface-2)] px-3.5 font-mono text-[15px] font-medium tracking-tight text-[var(--ink)] placeholder:text-[var(--ink-tertiary)] focus:border-[var(--primary-focus)]"
         />
         <button
           type="submit"
           disabled={disabled}
           aria-describedby={disabledReason ? "ticker-submit-status" : undefined}
-          className="h-11 rounded-md bg-[var(--alpha-700)] px-4 text-sm font-semibold text-white transition hover:bg-[var(--alpha-800)] disabled:cursor-not-allowed disabled:bg-slate-300"
+          className="btn-primary h-11 px-5 text-sm"
         >
           {disabled ? "Start unavailable" : "Run Band analysis"}
         </button>
       </form>
       {disabledReason ? (
-        <p id="ticker-submit-status" className="mt-2 text-xs text-slate-500">
+        <p id="ticker-submit-status" className="mt-2.5 text-xs text-[var(--ink-subtle)]">
           {disabledReason}
         </p>
       ) : null}
-      <div className="mt-3 flex flex-wrap gap-2" aria-label="Ticker suggestions">
+      <div className="mt-4 flex flex-wrap gap-2" aria-label="Ticker suggestions">
         {suggestions.map((item) => (
           <button
             key={item}
             type="button"
             onClick={() => submit(item)}
             disabled={disabled}
-            className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 font-mono text-xs font-semibold text-slate-700 hover:border-[var(--alpha-300)] hover:bg-[var(--alpha-50)] disabled:opacity-60"
+            className="rounded-md border border-[var(--hairline)] bg-[var(--surface-2)] px-2.5 py-1 font-mono text-xs font-medium text-[var(--ink-muted)] transition hover:border-[var(--primary-line)] hover:text-[var(--ink)] disabled:opacity-50"
           >
             {item}
           </button>
