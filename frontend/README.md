@@ -114,6 +114,16 @@ npm install
 npm run dev
 ```
 
+which starts up a Next.js frontend.
+
+From the `backend/` directory:
+
+```bash
+python main.py
+```
+
+which starts up all of the agents, connects them to Band and interfaces with the backend.
+
 Then open:
 
 ```text
