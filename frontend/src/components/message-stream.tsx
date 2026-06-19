@@ -4,9 +4,11 @@ import { useEffect, useRef, useState } from "react";
 import { AGENTS, AGENT_BY_ID, AgentId, AgentMessage, relativeTime } from "@/lib/alphasign";
 import { formatDateTime } from "@/lib/formatters";
 import type { StreamStatus } from "@/hooks/use-alphasign-stream";
+import type { ProtocolCardEvent } from "@/lib/alphasign";
 
 type MessageStreamProps = {
   messages: AgentMessage[];
+  cards: ProtocolCardEvent[];
   selected: AgentId | "all";
   onSelect: (agent: AgentId | "all") => void;
   status: StreamStatus;
@@ -16,6 +18,7 @@ const CLAMP_CHARS = 320;
 
 export function MessageStream({
   messages,
+  cards,
   selected,
   onSelect,
   status,
@@ -27,6 +30,7 @@ export function MessageStream({
 
   const filtered =
     selected === "all" ? messages : messages.filter((m) => m.agent === selected);
+  const filteredCards = selected === "all" ? cards : cards.filter((event) => event.agent === selected);
 
   // Keep pinned to the newest message while the user hasn't scrolled away.
   useEffect(() => {
@@ -106,20 +110,23 @@ export function MessageStream({
         onScroll={onScroll}
         className="relative mt-4 flex-1 space-y-2.5 overflow-auto rounded-md border border-[var(--hairline)] p-3"
       >
-        {filtered.length === 0 ? (
+        {filteredCards.length === 0 ? (
           <div className="empty-well flex h-full min-h-[16rem] items-center justify-center p-6 text-center text-sm">
             {status === "disconnected"
               ? "Adapter offline. Start the backend, then reconnect."
               : "Waiting for agents to post into the Band room…"}
           </div>
         ) : (
-          filtered.map((message, index) => {
-            const meta = AGENT_BY_ID[message.agent];
-            const key = `${message.agent}-${message.ts}-${index}`;
-            const long = message.text.length > CLAMP_CHARS;
+          filteredCards.map((event, index) => {
+            const message = messages.find((item) => item.agent === event.agent && item.ts === event.source_ts);
+            const card = event.card;
+            const meta = AGENT_BY_ID[event.agent];
+            const key = `${event.agent}-${event.source_ts}-${index}`;
+            const rawText = message?.text ?? "";
+            const long = rawText.length > 0;
             const isOpen = expanded.has(key);
             const text =
-              long && !isOpen ? `${message.text.slice(0, CLAMP_CHARS)}…` : message.text;
+              rawText.length > CLAMP_CHARS && !isOpen ? `${rawText.slice(0, CLAMP_CHARS)}…` : rawText;
             return (
               <article
                 key={key}
@@ -128,23 +135,27 @@ export function MessageStream({
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
                     <span className="rounded-md bg-[var(--primary-soft)] px-2 py-0.5 text-[11px] font-medium text-[var(--primary-hover)]">
-                      {meta?.name ?? message.agent}
+                      {meta?.name ?? event.agent} · {card.kind}
                     </span>
                     <span className="text-[11px] text-[var(--ink-tertiary)]">
-                      {formatDateTime(message.ts)} · {relativeTime(message.ts)}
+                      {formatDateTime(event.ts)} · {relativeTime(event.ts)}
                     </span>
                   </div>
                   <button
                     type="button"
-                    onClick={() => copy(key, message.text)}
+                    onClick={() => copy(key, card.summary)}
                     className="rounded-md px-1.5 py-0.5 text-[11px] text-[var(--ink-subtle)] transition hover:bg-[var(--surface-3)] hover:text-[var(--ink)]"
                   >
                     {copied === key ? "Copied" : "Copy"}
                   </button>
                 </div>
-                <p className="mt-2 whitespace-pre-wrap text-[13px] leading-6 text-[var(--ink-muted)]">
-                  {text}
-                </p>
+                <div className="mt-3 flex items-start justify-between gap-3">
+                  <div><h3 className="text-sm font-semibold text-[var(--ink)]">{card.title}</h3><p className="mt-1 text-[13px] leading-6 text-[var(--ink-muted)]">{card.summary}</p></div>
+                  <span className="chip shrink-0 capitalize">{card.stance}</span>
+                </div>
+                {card.metrics.length ? <dl className="mt-3 grid grid-cols-2 gap-2">{card.metrics.map((metric) => <div key={`${metric.label}-${metric.value}`} className="inset p-2.5"><dt className="text-[10px] uppercase text-[var(--ink-tertiary)]">{metric.label}</dt><dd className="mt-1 text-xs font-medium text-[var(--ink)]">{metric.value}</dd></div>)}</dl> : null}
+                {card.evidence.length ? <ul className="mt-3 space-y-1 text-xs leading-5 text-[var(--ink-muted)]">{card.evidence.map((item) => <li key={item}>• {item}</li>)}</ul> : null}
+                {card.next_action ? <p className="mt-3 border-l-2 border-[var(--primary)] pl-2.5 text-xs text-[var(--ink-subtle)]">Next: {card.next_action}</p> : null}
                 {long ? (
                   <button
                     type="button"
@@ -158,9 +169,10 @@ export function MessageStream({
                     }
                     className="mt-1.5 text-[12px] font-medium text-[var(--primary-hover)] hover:underline"
                   >
-                    {isOpen ? "Show less" : "Show more"}
+                    {isOpen ? "Hide raw transcript" : "Show raw transcript"}
                   </button>
                 ) : null}
+                {isOpen ? <pre className="mt-2 whitespace-pre-wrap rounded-md bg-[var(--surface-3)] p-3 text-[11px] leading-5 text-[var(--ink-subtle)]">{text}</pre> : null}
               </article>
             );
           })
@@ -169,7 +181,7 @@ export function MessageStream({
 
       <div className="mt-2.5 flex items-center justify-between text-[11px] text-[var(--ink-tertiary)]">
         <span>
-          {filtered.length} {selected === "all" ? "messages" : "from " + AGENT_BY_ID[selected]?.short}
+          {filteredCards.length} {selected === "all" ? "cards" : "from " + AGENT_BY_ID[selected]?.short}
         </span>
         {!autoFollow && filtered.length > 0 ? (
           <button

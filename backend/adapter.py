@@ -133,6 +133,7 @@ class AlphaSignAdapter:
         app.router.add_post("/api/sessions", self._handle_start_session)
         app.router.add_post("/api/rooms", self._handle_create_room)
         app.router.add_post("/api/rooms/close", self._handle_close_room)
+        app.router.add_get("/api/market/{ticker}", self._handle_market_snapshot)
         app.on_response_prepare.append(self._add_cors)
         return app
 
@@ -188,6 +189,26 @@ class AlphaSignAdapter:
     async def _handle_messages(self, request: web.Request) -> web.Response:
         """Return full message history as JSON array."""
         return web.json_response(list(self._history))
+
+    async def _handle_market_snapshot(self, request: web.Request) -> web.Response:
+        """Return a near-real-time Yahoo Finance quote and intraday series."""
+        ticker = request.match_info["ticker"].strip().upper()
+        if not re.fullmatch(r"[A-Z^][A-Z0-9.^-]{0,14}", ticker):
+            return web.json_response({"error": "invalid ticker"}, status=400)
+        try:
+            snapshot = await asyncio.to_thread(_fetch_yahoo_snapshot, ticker)
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=404)
+        except Exception:
+            logger.exception("Yahoo Finance request failed for %s", ticker)
+            return web.json_response(
+                {"error": "Yahoo Finance market data is temporarily unavailable"},
+                status=502,
+            )
+        return web.json_response(
+            snapshot,
+            headers={"Cache-Control": "no-store, max-age=0"},
+        )
 
     async def _handle_report(self, request: web.Request) -> web.Response:
         """Stream the PDF report if it exists."""
@@ -334,6 +355,62 @@ class AlphaSignAdapter:
                 q.put_nowait(None)
             except asyncio.QueueFull:
                 pass
+
+
+def _fetch_yahoo_snapshot(symbol: str) -> dict[str, Any]:
+    """Blocking yfinance work; called in a worker thread by the handler."""
+    import math
+    import yfinance as yf
+
+    quote = yf.Ticker(symbol)
+    history = quote.history(period="1d", interval="1m", auto_adjust=False, prepost=False)
+    if history.empty:
+        history = quote.history(period="5d", interval="5m", auto_adjust=False, prepost=False)
+    if history.empty or "Close" not in history:
+        raise ValueError(f"No Yahoo Finance data found for {symbol}")
+
+    closes = history["Close"].dropna()
+    if closes.empty:
+        raise ValueError(f"No Yahoo Finance price found for {symbol}")
+
+    def finite(value: Any) -> float | None:
+        try:
+            result = float(value)
+            return result if math.isfinite(result) else None
+        except (TypeError, ValueError):
+            return None
+
+    metadata = quote.history_metadata or {}
+    price = finite(closes.iloc[-1]) or 0.0
+    previous_close = finite(metadata.get("chartPreviousClose"))
+    if previous_close is None:
+        previous_close = finite(metadata.get("previousClose"))
+    if previous_close is None:
+        daily = quote.history(period="5d", interval="1d", auto_adjust=False)
+        daily_closes = daily.get("Close", []).dropna() if not daily.empty else []
+        previous_close = finite(daily_closes.iloc[-2]) if len(daily_closes) > 1 else price
+    change = price - previous_close
+
+    fast = quote.fast_info
+    points = [
+        {"date": index.isoformat(), "close": float(value)}
+        for index, value in closes.items()
+        if finite(value) is not None
+    ]
+    return {
+        "ticker": symbol,
+        "name": metadata.get("longName") or metadata.get("shortName") or symbol,
+        "price": price,
+        "change": change,
+        "change_percent": (change / previous_close * 100) if previous_close else 0.0,
+        "volume": finite(metadata.get("regularMarketVolume")) or finite(fast.get("last_volume")),
+        "market_cap": finite(fast.get("market_cap")),
+        "fifty_two_week_low": finite(fast.get("year_low")),
+        "fifty_two_week_high": finite(fast.get("year_high")),
+        "history": points,
+        "source": "Yahoo Finance",
+        "as_of": datetime.now(timezone.utc).isoformat(),
+    }
 
 
 # ── Standalone entry point ─────────────────────────────────────────────────────

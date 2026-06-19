@@ -4,12 +4,14 @@ import { FormEvent, useEffect, useState } from "react";
 import { AgentGraph } from "@/components/agent-graph";
 import { AgentLanes } from "@/components/agent-lanes";
 import { MessageStream } from "@/components/message-stream";
+import { MarketSnapshot } from "@/components/market-snapshot";
 import { ReportPanel } from "@/components/report-panel";
 import { useAlphaSignStream, type StreamStatus } from "@/hooks/use-alphasign-stream";
 import { ALPHASIGN_BASE_URL, AgentId, relativeTime } from "@/lib/alphasign";
+import type { MarketSnapshot as MarketSnapshotData } from "@/lib/types";
 
 export function AppShell() {
-  const { messages, status, reportReady, reportTs, lastEventTs, error, reset, reload } =
+  const { messages, cards, status, reportReady, reportTs, lastEventTs, error, reset, reload } =
     useAlphaSignStream();
   const [selected, setSelected] = useState<AgentId | "all">("all");
   const [resetting, setResetting] = useState(false);
@@ -24,6 +26,9 @@ export function AppShell() {
   const [roomId, setRoomId] = useState<string | null>(null);
   const [closingRoom, setClosingRoom] = useState(false);
   const [roomClosed, setRoomClosed] = useState(false);
+  const [market, setMarket] = useState<MarketSnapshotData | null>(null);
+  const [marketError, setMarketError] = useState<string | null>(null);
+  const [marketLoading, setMarketLoading] = useState(false);
 
   useEffect(() => {
     fetch("/api/alphasign/config", { cache: "no-store" })
@@ -33,6 +38,42 @@ export function AppShell() {
       })
       .catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    if (!ticker) return;
+    const controller = new AbortController();
+    let active = true;
+
+    async function loadMarket() {
+      setMarketLoading(true);
+      try {
+        const response = await fetch(`/api/alphasign/api/market/${encodeURIComponent(ticker!)}`, {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        const result = (await response.json()) as MarketSnapshotData & { error?: string };
+        if (!response.ok) throw new Error(result.error ?? "Could not load Yahoo Finance data.");
+        if (active) {
+          setMarket(result);
+          setMarketError(null);
+        }
+      } catch (loadError) {
+        if (active && !(loadError instanceof DOMException && loadError.name === "AbortError")) {
+          setMarketError(loadError instanceof Error ? loadError.message : "Could not load market data.");
+        }
+      } finally {
+        if (active) setMarketLoading(false);
+      }
+    }
+
+    void loadMarket();
+    const refresh = window.setInterval(loadMarket, 60_000);
+    return () => {
+      active = false;
+      controller.abort();
+      window.clearInterval(refresh);
+    };
+  }, [ticker]);
 
   const activeAgent: AgentId | null =
     messages.length > 0 ? messages[messages.length - 1].agent : null;
@@ -243,6 +284,10 @@ export function AppShell() {
             </div>
           ) : null}
 
+          {ticker ? (
+            <MarketSnapshot market={market} loading={marketLoading} error={marketError} />
+          ) : null}
+
           <AgentGraph
             messages={messages}
             reportReady={reportReady}
@@ -252,6 +297,7 @@ export function AppShell() {
           />
           <MessageStream
             messages={messages}
+            cards={cards}
             selected={selected}
             onSelect={setSelected}
             status={status}

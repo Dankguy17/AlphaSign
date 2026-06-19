@@ -39,6 +39,7 @@ load_dotenv(find_dotenv())
 from adapter import AlphaSignAdapter
 from start_agent import StartAgent
 from agents.executive.agent_executive import generate_executive_report
+from live_protocol import GroqProtocolNormalizer
 
 logging.basicConfig(
     level=logging.INFO,
@@ -70,6 +71,8 @@ class SessionState:
         self._agent_tasks: list[asyncio.Task] = []
         self._log_path = CONV_LOG_PATH
         self._log_path.write_text("")    # clear / create on startup
+        self._normalizer = GroqProtocolNormalizer()
+        self._normalizer.clear()
 
     def bind_agent_tasks(self, tasks: list[asyncio.Task]) -> None:
         """Register the live agent loops so the turn limit can stop them."""
@@ -107,6 +110,7 @@ class SessionState:
 
         # Forward to adapter's message queue so the frontend can poll it
         self.adapter.enqueue(entry)
+        asyncio.create_task(self._normalize_entry(entry))
 
         logger.info(
             "Turn %d/%d — %s (room=%s)",
@@ -118,6 +122,32 @@ class SessionState:
             self._report_triggered = True
             asyncio.get_event_loop().create_task(self._generate_report())
             self._stop_agents()
+
+    async def _normalize_entry(self, entry: dict) -> None:
+        """Turn one raw Band message into the stable, persisted UI protocol."""
+        try:
+            card = await self._normalizer.normalize(
+                entry["agent"], entry["room_id"], entry["text"]
+            )
+            event = {
+                "type": "protocol_card",
+                "agent": entry["agent"],
+                "room_id": entry["room_id"],
+                "source_ts": entry["ts"],
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "card": card.model_dump(mode="json"),
+            }
+            self._normalizer.persist(event)
+            self.adapter.enqueue(event)
+        except Exception as exc:
+            logger.error("Groq protocol normalization failed for %s: %s", entry["agent"], exc)
+            self.adapter.enqueue({
+                "type": "protocol_error",
+                "agent": entry["agent"],
+                "room_id": entry["room_id"],
+                "source_ts": entry["ts"],
+                "error": str(exc),
+            })
 
     async def set_max_turns(self, requested: int) -> int:
         """Update the live limit while enforcing the application-wide ceiling."""

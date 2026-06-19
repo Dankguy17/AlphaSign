@@ -4,10 +4,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ALPHASIGN_BASE_URL,
   AgentMessage,
+  ProtocolCardEvent,
   StreamEvent,
   checkReportReady,
   fetchHistory,
+  fetchProtocolHistory,
   isAgentMessage,
+  isProtocolCard,
   messageKey,
   resetSession,
 } from "@/lib/alphasign";
@@ -16,6 +19,7 @@ export type StreamStatus = "connecting" | "live" | "disconnected";
 
 export type AlphaSignStream = {
   messages: AgentMessage[];
+  cards: ProtocolCardEvent[];
   status: StreamStatus;
   reportReady: boolean;
   reportTs: string | null;
@@ -27,6 +31,7 @@ export type AlphaSignStream = {
 
 export function useAlphaSignStream(): AlphaSignStream {
   const [messages, setMessages] = useState<AgentMessage[]>([]);
+  const [cards, setCards] = useState<ProtocolCardEvent[]>([]);
   const [status, setStatus] = useState<StreamStatus>("connecting");
   const [reportReady, setReportReady] = useState(false);
   const [reportTs, setReportTs] = useState<string | null>(null);
@@ -48,6 +53,7 @@ export function useAlphaSignStream(): AlphaSignStream {
   const clearLocal = useCallback(() => {
     seen.current.clear();
     setMessages([]);
+    setCards([]);
     setReportReady(false);
     setReportTs(null);
   }, []);
@@ -70,12 +76,14 @@ export function useAlphaSignStream(): AlphaSignStream {
 
       // Seed from history + check whether a report already exists.
       try {
-        const [history, hasReport] = await Promise.all([
+        const [history, protocolHistory, hasReport] = await Promise.all([
           fetchHistory(controller.signal),
+          fetchProtocolHistory(controller.signal),
           checkReportReady(controller.signal),
         ]);
         if (cancelled) return;
         history.forEach(ingest);
+        setCards(protocolHistory);
         if (hasReport) setReportReady(true);
       } catch {
         if (cancelled || controller.signal.aborted) return;
@@ -108,6 +116,8 @@ export function useAlphaSignStream(): AlphaSignStream {
           clearLocal();
         } else if (isAgentMessage(data)) {
           ingest(data);
+        } else if (isProtocolCard(data)) {
+          setCards((previous) => previous.some((item) => item.source_ts === data.source_ts) ? previous : [...previous, data]);
         }
       };
 
@@ -128,6 +138,7 @@ export function useAlphaSignStream(): AlphaSignStream {
 
   return {
     messages,
+    cards,
     status,
     reportReady,
     reportTs,

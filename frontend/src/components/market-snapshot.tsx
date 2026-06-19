@@ -3,16 +3,17 @@ import type { MarketSnapshot } from "@/lib/types";
 
 type MarketSnapshotProps = {
   market: MarketSnapshot | null;
+  loading?: boolean;
+  error?: string | null;
 };
 
-export function MarketSnapshot({ market }: MarketSnapshotProps) {
+export function MarketSnapshot({ market, loading = false, error = null }: MarketSnapshotProps) {
   if (!market) {
     return (
       <section className="panel p-5">
         <PanelHeading title="Market snapshot" subtitle="Waiting for ticker data" />
         <div className="empty-well mt-4 p-6 text-sm">
-          Market data loads from <span className="font-mono">GET /api/market/:ticker</span> once
-          the adapter is available.
+          {loading ? "Loading live Yahoo Finance data…" : error ?? "Submit a ticker to load live market data."}
         </div>
       </section>
     );
@@ -107,23 +108,26 @@ function Metric({
 function PriceSparkline({ data }: { data: { date: string; close: number }[] }) {
   if (data.length < 2) return null;
   const width = 720;
-  const height = 180;
+  const height = 210;
+  const padding = 18;
   const values = data.map((point) => point.close);
   const min = Math.min(...values);
   const max = Math.max(...values);
   const range = max - min || 1;
   const coords = data.map((point, index) => {
-    const x = (index / (data.length - 1)) * width;
-    const y = height - ((point.close - min) / range) * (height - 24) - 12;
+    const x = padding + (index / (data.length - 1)) * (width - padding * 2);
+    const y = height - ((point.close - min) / range) * (height - padding * 2) - padding;
     return [x, y] as const;
   });
   const line = coords.map(([x, y]) => `${x},${y}`).join(" ");
-  const area = `0,${height} ${line} ${width},${height}`;
+  const area = `${padding},${height - padding} ${line} ${width - padding},${height - padding}`;
+  const positive = values.at(-1)! >= values[0];
+  const stroke = positive ? "var(--positive)" : "var(--negative)";
 
   return (
     <div className="inset mt-4 p-3.5">
       <div className="mb-2 flex items-center justify-between text-xs text-[var(--ink-subtle)]">
-        <span>Price history</span>
+        <span>Today · 1 minute</span>
         <span className="font-mono">
           {formatCurrency(min)} / {formatCurrency(max)}
         </span>
@@ -135,11 +139,22 @@ function PriceSparkline({ data }: { data: { date: string; close: number }[] }) {
         className="h-44 w-full"
         preserveAspectRatio="none"
       >
-        <polygon points={area} fill="var(--primary-soft)" />
+        {[0.25, 0.5, 0.75].map((position) => (
+          <line
+            key={position}
+            x1={padding}
+            x2={width - padding}
+            y1={height * position}
+            y2={height * position}
+            stroke="var(--hairline)"
+            strokeDasharray="4 6"
+          />
+        ))}
+        <polygon points={area} fill={stroke} opacity="0.1" />
         <polyline
           points={line}
           fill="none"
-          stroke="var(--primary)"
+          stroke={stroke}
           strokeWidth="3"
           strokeLinecap="round"
           strokeLinejoin="round"
