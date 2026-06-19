@@ -25,7 +25,7 @@ import asyncio
 import json
 import logging
 import os
-from typing import Any
+from typing import Any, Callable
 
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.rate_limiters import InMemoryRateLimiter
@@ -85,6 +85,25 @@ DELIVERING YOUR RESPONSE
 ------------------------
 Return one complete plain-text write-up. Do not call any message-sending tool,
 do not send progress updates, and do not produce more than one final response.
+
+PIPELINE ROUTING — ONE AGENT PER TURN (CRITICAL)
+-------------------------------------------------
+You are the final agent in each loop iteration before control returns to
+the start:
+
+    Narrative Analyst → Signal Processing → YOU → Narrative Analyst → …
+
+On every turn you send EXACTLY ONE message addressed to EXACTLY ONE agent:
+@narrative_analyst. This is your only permitted downstream mention.
+
+  • NEVER @mention @signal_processing directly.
+  • NEVER @mention more than one agent in a single message.
+  • NEVER send a second or follow-up message in the same turn.
+  • After you send your message, STOP. Wait for Narrative Analyst to reply.
+
+Your message to @narrative_analyst must include your full findings:
+the filtered latent level, trend slope, next-value prediction, z-score,
+regime-shift flag, your summary, and a clear conclusion tied to the lens.
 """
 
 
@@ -206,7 +225,15 @@ def _build_graph_factory(llm: ChatOpenAI, checkpointer: InMemorySaver):
 class SingleDeliveryLangGraphAdapter(LangGraphAdapter):
     """
     Run local Kalman/summary tools, then publish exactly one final response.
+
+    Pass on_final_response to receive a callback immediately before the
+    message is sent to Band. Signature:
+        (agent_name: str, room_id: str, text: str) -> None
     """
+
+    def __init__(self, *args, on_final_response: Callable[[str, str, str], None] | None = None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._on_final_response = on_final_response
 
     async def on_message(
         self,
@@ -236,7 +263,8 @@ class SingleDeliveryLangGraphAdapter(LangGraphAdapter):
         messages: list[Any] = []
         if is_session_bootstrap:
             if self.graph_factory and room_id not in self._bootstrapped_rooms:
-                messages.append(("system", self._system_prompt))
+                # messages.append(("system", self._system_prompt))
+                messages.append(("system", SYSTEM_PROMPT))
                 self._bootstrapped_rooms.add(room_id)
             if history:
                 messages.extend(history)
@@ -268,6 +296,12 @@ class SingleDeliveryLangGraphAdapter(LangGraphAdapter):
 
             if not final_text:
                 raise RuntimeError("Latent Space produced no final response text.")
+
+            if self._on_final_response:
+                try:
+                    self._on_final_response("latent_state", room_id, final_text)
+                except Exception as cb_exc:
+                    logger.warning("on_final_response callback raised: %s", cb_exc)
 
             await tools.send_message(final_text, self._reply_mentions(msg, tools))
             logger.info("[DONE] Latent Space message %s processed successfully", msg.id)
@@ -335,15 +369,18 @@ class SingleDeliveryLangGraphAdapter(LangGraphAdapter):
 
     @staticmethod
     def _reply_mentions(msg: Any, tools: Any) -> list[str]:
+        """
+        Latent State always replies to @narrative_analyst — that is its fixed
+        downstream target in the pipeline, closing the loop.
+        """
         participants = getattr(tools, "participants", []) or []
-        sender_id = getattr(msg, "sender_id", None)
 
         for participant in participants:
-            if participant.get("id") == sender_id:
-                handle = participant.get("handle") or participant.get("name")
-                return [handle] if handle else []
+            handle = participant.get("handle") or participant.get("name") or ""
+            if "narrative-analyst" in handle.lower() or "narrative_analyst" in handle.lower():
+                return [handle]
 
-        return []
+        return ["@narrative_analyst"]
 
     @staticmethod
     def _message_text(message: Any) -> str | None:
@@ -371,7 +408,7 @@ class SingleDeliveryLangGraphAdapter(LangGraphAdapter):
         return None
 
 
-async def main():
+async def main(on_final_response: Callable[[str, str, str], None] | None = None):
     agent_id, api_key = load_agent_credentials("latent_state")
     logger.info("Loaded Latent Space agent: %s", agent_id)
 
@@ -399,6 +436,7 @@ async def main():
     adapter = SingleDeliveryLangGraphAdapter(
         graph_factory=_build_graph_factory(llm, checkpointer),
         custom_section=SYSTEM_PROMPT,
+        on_final_response=on_final_response,
     )
     adapter._own_agent_id = agent_id
 

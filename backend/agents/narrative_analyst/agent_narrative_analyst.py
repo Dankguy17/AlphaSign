@@ -70,7 +70,7 @@ import logging
 import os
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from dotenv import load_dotenv, find_dotenv
 
@@ -273,15 +273,8 @@ SOURCE RELIABILITY
   Narrative questions for Signal Processing:
 {q_signal_str}
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🔬  REQUEST → @latent_state
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  Asset:    {asset}
-  Windows:  {ls_windows}
-  Reason:   {ls_reason}
-
-  Narrative questions for Latent State:
-{q_latent_str}
+  Note: Signal Processing will forward relevant data to @latent_state
+  as part of its own analysis step.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   Confidence: {confidence:.0%}  |  Awaiting: price reaction + Kalman confirmation
@@ -356,8 +349,7 @@ def _run_research_pipeline(
             f"Confidence: {brief.get('confidence', 0.0):.0%}\n\n"
             f"→ @signal_processing "
             f"windows={radar.get('signal_request', {}).get('suggested_windows')} "
-            f"metrics={radar.get('signal_request', {}).get('requested_metrics')}\n"
-            f"→ @latent_state {radar.get('latent_request', {}).get('reason')}"
+            f"metrics={radar.get('signal_request', {}).get('requested_metrics')}"
         )
 
     return formatted
@@ -588,6 +580,24 @@ This room has two kinds of incoming messages. Identify which one you've received
    → Do NOT ask the message sender for the ticker — it is already tracked for this room.
 
 ════════════════════════════════════════════════════════════
+MENTIONS — ONE AGENT PER TURN (CRITICAL)
+════════════════════════════════════════════════════════════
+
+You operate in a strictly sequential pipeline. On every turn you may
+@mention EXACTLY ONE agent: @signal_processing.
+
+  • NEVER @mention @latent_state directly. Signal Processing handles
+    the handoff to Latent State as part of its own analysis step.
+  • NEVER @mention more than one agent in a single message.
+  • NEVER send a second message in the same turn.
+  • After you send your message, STOP and wait for a reply.
+
+If the incoming message was FROM Signal Processing or Latent State,
+@mention @signal_processing again in your reply (continuing the loop)
+OR ask @signal_processing for clarification if you need more data.
+Do NOT address both agents in the same response under any circumstances.
+
+════════════════════════════════════════════════════════════
 MANDATORY SINGLE-MESSAGE PROTOCOL
 ════════════════════════════════════════════════════════════
 
@@ -605,10 +615,12 @@ RULES:
     thenvoi_lookup_peers unless explicitly instructed.
 
 ════════════════════════════════════════════════════════════
-MENTIONS
+PASSING THE MENTION TO thenvoi_send_message
 ════════════════════════════════════════════════════════════
 
-If the incoming message includes a sender mention or name, you may pass that mention to thenvoi_send_message. Otherwise omit mentions or use whatever default this room's framework expects — do not invent a name.
+Always pass mentions=["@signal_processing"] to thenvoi_send_message.
+Never pass multiple mentions. Never omit the mention — Signal Processing
+needs to be notified or it will not see your message.
 """
 
 
@@ -647,6 +659,45 @@ class AgentWhiteboxLogger(BaseCallbackHandler):
                     print("═" * 80 + "\n")
 
 
+class FinalResponseCallback(BaseCallbackHandler):
+    """
+    Fires on_final_response(agent_name, room_id, text) whenever the Narrative
+    Analyst LLM produces a final plain-text turn (i.e. the text that will be
+    passed verbatim to thenvoi_send_message).
+
+    Register a callable via NarrativeAnalystAdapter or pass directly to main().
+    The callback signature is: (agent_name: str, room_id: str, text: str) -> None
+    """
+
+    def __init__(self, callback: Callable[[str, str, str], None] | None = None):
+        super().__init__()
+        self._callback = callback
+        self._current_room_id: str = ""
+
+    def set_room_id(self, room_id: str) -> None:
+        self._current_room_id = room_id
+
+    def on_llm_end(self, response, **kwargs):
+        if not self._callback:
+            return
+        for generation in response.generations:
+            for g in generation:
+                # Only fire on plain-text final generations (no pending tool calls)
+                if hasattr(g, "message") and getattr(g.message, "tool_calls", None):
+                    continue
+                text = getattr(g, "text", None) or ""
+                if not text:
+                    content = getattr(getattr(g, "message", None), "content", None)
+                    if isinstance(content, str):
+                        text = content
+                text = text.strip()
+                if text:
+                    try:
+                        self._callback("narrative_analyst", self._current_room_id, text)
+                    except Exception as cb_exc:
+                        logger.warning("on_final_response callback raised: %s", cb_exc)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Main
 # ─────────────────────────────────────────────────────────────────────────────
@@ -656,7 +707,7 @@ class AgentWhiteboxLogger(BaseCallbackHandler):
 DEFAULT_FEATHERLESS_MODEL = "deepseek-ai/DeepSeek-V4-Pro"
 
 
-async def main():
+async def main(on_final_response: Callable[[str, str, str], None] | None = None):
     config_path = _find_config_yaml()
     agent_id, api_key = load_agent_config("narrative_analyst", config_path=config_path)
     logger.info(f"Loaded Narrative Analyst agent: {agent_id}")
@@ -667,12 +718,16 @@ async def main():
         max_bucket_size=1,
     )
 
+    callbacks: list[BaseCallbackHandler] = [AgentWhiteboxLogger()]
+    if on_final_response:
+        callbacks.append(FinalResponseCallback(on_final_response))
+
     llm = ChatOpenAI(
         base_url=os.getenv("FEATHERLESS_BASE_URL", "https://api.featherless.ai/v1"),
         api_key=os.getenv("FEATHERLESS_API_KEY"),
         model=os.getenv("FEATHERLESS_MODEL", DEFAULT_FEATHERLESS_MODEL),
         rate_limiter=rate_limiter,
-        callbacks=[AgentWhiteboxLogger()],
+        callbacks=callbacks,
         streaming=False,
         stream_chunk_timeout=None,
         max_retries=2,

@@ -65,7 +65,7 @@ import json
 import logging
 import os
 import uuid
-from typing import Any
+from typing import Any, Callable
 
 from thenvoi import Agent
 from thenvoi.adapters import LangGraphAdapter
@@ -211,6 +211,30 @@ Conclusion:
 
 If a message doesn't contain enough information to identify a ticker or
 hypothesis, ask for clarification rather than guessing.
+
+PIPELINE ROUTING — ONE AGENT PER TURN (CRITICAL)
+─────────────────────────────────────────────────
+You are the middle agent in a strictly sequential pipeline:
+
+    Narrative Analyst → YOU → Latent State → Narrative Analyst → …
+
+On every turn you send EXACTLY ONE message addressed to EXACTLY ONE agent:
+@latent_state. This is your only permitted downstream mention.
+
+  • NEVER @mention @narrative_analyst directly.
+  • NEVER @mention more than one agent in a single message.
+  • NEVER send a second or follow-up message in the same turn.
+  • After you send your message, STOP. Wait for Latent State to reply.
+  • If you need clarification from Narrative Analyst, ask @latent_state
+    to relay the question — or simply flag the ambiguity in your findings
+    packet and let the loop surface it naturally.
+
+Your message to @latent_state must include:
+  1. The raw data payloads you computed (prices/metrics in JSON form so
+     Latent State can run Kalman filters on them directly).
+  2. The lens/hypothesis from Narrative Analyst so Latent State has context.
+  3. Your own quantitative findings summary (the findings packet described
+     above), so Latent State has a complete picture without needing to ask.
 
 DELIVERING YOUR RESPONSE TO THE ROOM
 ────────────────────────────────────
@@ -665,7 +689,15 @@ class ReliableDeliveryLangGraphAdapter(LangGraphAdapter):
     """
     Run the analysis with local tools only, then publish exactly one final
     response to Band after the graph completes.
+
+    Pass on_final_response to receive a callback immediately before the
+    message is sent to Band. Signature:
+        (agent_name: str, room_id: str, text: str) -> None
     """
+
+    def __init__(self, *args, on_final_response: Callable[[str, str, str], None] | None = None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._on_final_response = on_final_response
 
     async def on_message(
         self,
@@ -689,7 +721,8 @@ class ReliableDeliveryLangGraphAdapter(LangGraphAdapter):
         messages: list[Any] = []
         if is_session_bootstrap:
             if self.graph_factory and room_id not in self._bootstrapped_rooms:
-                messages.append(("system", self._system_prompt))
+                # messages.append(("system", self._system_prompt))
+                messages.append(("system", SYSTEM_PROMPT))
                 self._bootstrapped_rooms.add(room_id)
             if history:
                 messages.extend(history)
@@ -722,6 +755,12 @@ class ReliableDeliveryLangGraphAdapter(LangGraphAdapter):
 
             if not final_text:
                 raise RuntimeError("Signal Processing produced no final response text.")
+
+            if self._on_final_response:
+                try:
+                    self._on_final_response("signal_processing", room_id, final_text)
+                except Exception as cb_exc:
+                    logger.warning("on_final_response callback raised: %s", cb_exc)
 
             mentions = self._reply_mentions(msg, tools)
             logger.info("Posting one final Signal Processing response to Band.")
@@ -759,20 +798,20 @@ class ReliableDeliveryLangGraphAdapter(LangGraphAdapter):
 
     @staticmethod
     def _reply_mentions(msg: Any, tools: Any) -> list[str]:
+        """
+        Signal Processing always forwards to @latent_state — that is its fixed
+        downstream target in the pipeline. It never replies back to whoever
+        sent the message (which would be Narrative Analyst) directly.
+        """
         participants = getattr(tools, "participants", []) or []
-        sender_id = getattr(msg, "sender_id", None)
 
         for participant in participants:
-            if participant.get("id") == sender_id:
-                handle = participant.get("handle") or participant.get("name")
-                return [handle] if handle else []
-
-        for participant in participants:
-            handle = participant.get("handle") or participant.get("name")
-            if handle and "signal-processing" not in handle and "signal_processing" not in handle:
+            handle = participant.get("handle") or participant.get("name") or ""
+            if "latent-state" in handle.lower() or "latent_state" in handle.lower():
                 return [handle]
 
-        return []
+        # Fallback: return the canonical handle string; Band will resolve it.
+        return ["@latent_state"]
 
     @staticmethod
     def _message_text(message: Any) -> str | None:
@@ -800,7 +839,7 @@ class ReliableDeliveryLangGraphAdapter(LangGraphAdapter):
         return None
 
 
-async def main():
+async def main(on_final_response: Callable[[str, str, str], None] | None = None):
     # Dynamically extract credentials via our shared config layer
     agent_id, api_key = load_agent_credentials("signal_processing")
     logger.info(f"Loaded agent: {agent_id}")
@@ -811,6 +850,7 @@ async def main():
     adapter = ReliableDeliveryLangGraphAdapter(
         graph_factory=_build_graph_factory(llm, checkpointer),
         custom_section=SYSTEM_PROMPT,
+        on_final_response=on_final_response,
     )
 
     agent = Agent.create(
