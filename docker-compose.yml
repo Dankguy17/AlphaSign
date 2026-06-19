@@ -4,8 +4,6 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: alphasign-backend
-    env_file:
-      - backend/.env
     environment:
       ADAPTER_PORT: ${ADAPTER_PORT:-8765}
       ADAPTER_ALLOWED_ORIGIN: ${ADAPTER_ALLOWED_ORIGIN:-*}
