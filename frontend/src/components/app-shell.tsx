@@ -123,6 +123,7 @@ export function AppShell() {
     96,
     Math.max(sendingTicker ? 6 : 12, Math.round((sessionMessageCount / (maxTurns * 3)) * 100)),
   );
+  const showTranscript = showWorkflow || analysisRunning || ticker !== null || marketTicker !== null;
 
   useEffect(() => {
     if (workflowHideTimer.current) {
@@ -493,7 +494,7 @@ export function AppShell() {
               onSelect={setSelected}
             />
           ) : null}
-          {showWorkflow || analysisRunning || messages.length > 0 || cards.length > 0 || reportReady ? (
+          {showTranscript ? (
             <AnimatedContent
               distance={100}
               direction="vertical"
@@ -524,7 +525,7 @@ export function AppShell() {
               <ReportPanel reportTs={reportTs} />
             </div>
           ) : null}
-          {messages.length > 0 || reportReady ? (
+          {messages.length > 0 || reportReady || showTranscript ? (
             <AnimatedContent
               distance={100}
               direction="vertical"
