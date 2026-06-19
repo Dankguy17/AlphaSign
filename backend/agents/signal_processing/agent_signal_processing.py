@@ -826,7 +826,10 @@ class ReliableDeliveryLangGraphAdapter(LangGraphAdapter):
 
             if self._on_final_response:
                 try:
-                    self._on_final_response("signal_processing", room_id, final_text)
+                    permitted = self._on_final_response("signal_processing", room_id, final_text)
+                    if permitted is False:
+                        logger.info("Band response blocked by the session turn limit.")
+                        return
                 except Exception as cb_exc:
                     logger.warning("on_final_response callback raised: %s", cb_exc)
 

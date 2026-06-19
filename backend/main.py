@@ -28,8 +28,10 @@ import logging
 import os
 import signal
 import sys
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Awaitable, Callable
 
 from dotenv import load_dotenv, find_dotenv
 
@@ -69,6 +71,10 @@ class SessionState:
         self.messages: list[dict] = []   # {agent, room_id, text, ts}
         self._report_triggered = False
         self._agent_tasks: list[asyncio.Task] = []
+        self._normalization_tasks: set[asyncio.Task] = set()
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._state_lock = threading.Lock()
+        self._close_room: Callable[[str | None], Awaitable[dict[str, object]]] | None = None
         self._log_path = CONV_LOG_PATH
         self._log_path.write_text("")    # clear / create on startup
         self._normalizer = GroqProtocolNormalizer()
@@ -77,30 +83,98 @@ class SessionState:
     def bind_agent_tasks(self, tasks: list[asyncio.Task]) -> None:
         """Register the live agent loops so the turn limit can stop them."""
         self._agent_tasks = tasks
+        self._loop = asyncio.get_running_loop()
 
-    def _stop_agents(self) -> None:
+    def bind_room_closer(
+        self, closer: Callable[[str | None], Awaitable[dict[str, object]]]
+    ) -> None:
+        self._close_room = closer
+
+    async def _deactivate_room(self, room_id: str) -> None:
+        """Remove all runtime agents so Band cannot wake them again."""
+        if not self._close_room:
+            return
+        try:
+            await self._close_room(room_id)
+            logger.info("Band room %s deactivated at the turn limit", room_id)
+        except Exception as exc:
+            logger.error("Failed to deactivate Band room %s: %s", room_id, exc)
+
+    def _stop_agents(self, tasks: list[asyncio.Task] | None = None) -> None:
         """Hard-stop every agent loop; the adapter and report task stay alive."""
         logger.info("Hard turn limit reached — cancelling all agent runtimes")
-        for task in self._agent_tasks:
+        for task in tasks if tasks is not None else self._agent_tasks:
             if not task.done():
                 task.cancel()
 
+    def _schedule_normalization(self, entry: dict) -> None:
+        """Create and retain a normalization task until it has completed."""
+        task = asyncio.create_task(
+            self._normalize_entry(entry),
+            name=f"normalize-{entry['agent']}-{entry['ts']}",
+        )
+        self._normalization_tasks.add(task)
+        task.add_done_callback(self._normalization_tasks.discard)
+
+    async def _finish_cards_then_stop(self) -> None:
+        """Let every accepted response become a card before stopping agents."""
+        # Capture this generation. A new ticker may start replacement tasks
+        # while the old session is still finishing normalization.
+        tasks_to_stop = list(self._agent_tasks)
+        # Preserve the brief grace period agents need to finish their Band send.
+        await asyncio.sleep(0.5)
+        pending = list(self._normalization_tasks)
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
+        self._stop_agents(tasks_to_stop)
+
+    async def start_runtime(self) -> None:
+        """Reset session state and ensure all agent loops are live for a ticker."""
+        old_tasks = list(self._agent_tasks)
+        for task in old_tasks:
+            if not task.done():
+                task.cancel()
+        if old_tasks:
+            await asyncio.gather(*old_tasks, return_exceptions=True)
+
+        with self._state_lock:
+            self.turn_count = 0
+            self._report_triggered = False
+        self.messages.clear()
+        self._log_path.write_text("")
+        self._normalizer.clear()
+
+        tasks = [
+            asyncio.create_task(_run_narrative_analyst(self), name="narrative_analyst"),
+            asyncio.create_task(_run_signal_processing(self), name="signal_processing"),
+            asyncio.create_task(_run_latent_state(self), name="latent_state"),
+        ]
+        self.bind_agent_tasks(tasks)
+        logger.info("Agent runtimes started for a new ticker session")
+
     # Called from each agent's on_final_response hook (same asyncio thread)
-    def record(self, agent_name: str, room_id: str, text: str) -> None:
+    def record(self, agent_name: str, room_id: str, text: str) -> bool:
+        """Accept a response only while the session is live.
+
+        The return value is a transmission permit: agents must not post to Band
+        when it is false.
+        """
         # Agent WebSocket loops can continue receiving messages after the report
         # threshold. Do not let those callbacks extend the configured session.
-        if self.turn_count >= self.max_turns:
-            logger.info(
-                "Ignoring %s response — hard turn limit %d reached",
-                agent_name,
-                self.max_turns,
-            )
-            return
+        with self._state_lock:
+            if self.turn_count >= self.max_turns:
+                logger.info(
+                    "Blocking %s Band response — hard turn limit %d reached",
+                    agent_name,
+                    self.max_turns,
+                )
+                return False
+            self.turn_count += 1
+            reached_limit = self.turn_count >= self.max_turns
 
         ts = datetime.now(timezone.utc).isoformat()
         entry = {"agent": agent_name, "room_id": room_id, "text": text, "ts": ts}
         self.messages.append(entry)
-        self.turn_count += 1
 
         # Append to running log file
         with self._log_path.open("a", encoding="utf-8") as fh:
@@ -110,7 +184,8 @@ class SessionState:
 
         # Forward to adapter's message queue so the frontend can poll it
         self.adapter.enqueue(entry)
-        asyncio.create_task(self._normalize_entry(entry))
+        if self._loop:
+            self._loop.call_soon_threadsafe(self._schedule_normalization, entry)
 
         logger.info(
             "Turn %d/%d — %s (room=%s)",
@@ -118,10 +193,17 @@ class SessionState:
         )
 
         # Trigger report when limit is reached (only once)
-        if self.turn_count >= self.max_turns and not self._report_triggered:
+        if reached_limit and not self._report_triggered:
             self._report_triggered = True
-            asyncio.get_event_loop().create_task(self._generate_report())
-            self._stop_agents()
+            if self._loop:
+                asyncio.run_coroutine_threadsafe(self._generate_report(), self._loop)
+                asyncio.run_coroutine_threadsafe(self._deactivate_room(room_id), self._loop)
+                # Keep the process alive until every accepted response has been
+                # normalized and delivered to the dashboard.
+                asyncio.run_coroutine_threadsafe(
+                    self._finish_cards_then_stop(), self._loop
+                )
+        return True
 
     async def _normalize_entry(self, entry: dict) -> None:
         """Turn one raw Band message into the stable, persisted UI protocol."""
@@ -141,13 +223,18 @@ class SessionState:
             self.adapter.enqueue(event)
         except Exception as exc:
             logger.error("Groq protocol normalization failed for %s: %s", entry["agent"], exc)
-            self.adapter.enqueue({
-                "type": "protocol_error",
+            fallback = {
+                "type": "protocol_card",
                 "agent": entry["agent"],
                 "room_id": entry["room_id"],
                 "source_ts": entry["ts"],
-                "error": str(exc),
-            })
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "card": self._normalizer.fallback(
+                    entry["agent"], entry["text"]
+                ).model_dump(mode="json"),
+            }
+            self._normalizer.persist(fallback)
+            self.adapter.enqueue(fallback)
 
     async def set_max_turns(self, requested: int) -> int:
         """Update the live limit while enforcing the application-wide ceiling."""
@@ -156,7 +243,7 @@ class SessionState:
         if self.turn_count >= self.max_turns and not self._report_triggered:
             self._report_triggered = True
             asyncio.create_task(self._generate_report())
-            self._stop_agents()
+            asyncio.create_task(self._finish_cards_then_stop())
         return self.max_turns
 
     async def _generate_report(self) -> None:
@@ -203,10 +290,12 @@ async def run() -> None:
     session = SessionState(adapter=adapter, max_turns=MAX_TURNS)
     adapter.configure_turn_limit(lambda: session.max_turns, session.set_max_turns)
     start_agent = StartAgent(Path(__file__).with_name("agent_config.yaml"))
+    session.bind_room_closer(start_agent.close_room)
     adapter.configure_start_agent(
         start_agent.send_ticker,
         start_agent.create_room,
         start_agent.close_room,
+        session.start_runtime,
     )
 
     logger.info(
@@ -218,12 +307,8 @@ async def run() -> None:
     adapter_task = asyncio.create_task(adapter.serve(), name="adapter")
 
     # Start all three agents concurrently — each runs its own Band WebSocket loop
-    agent_tasks = [
-        asyncio.create_task(_run_narrative_analyst(session), name="narrative_analyst"),
-        asyncio.create_task(_run_signal_processing(session),  name="signal_processing"),
-        asyncio.create_task(_run_latent_state(session),       name="latent_state"),
-    ]
-    session.bind_agent_tasks(agent_tasks)
+    await session.start_runtime()
+    agent_tasks = session._agent_tasks
 
     all_tasks = [adapter_task] + agent_tasks
 
@@ -232,7 +317,7 @@ async def run() -> None:
 
     def _shutdown(sig_name: str) -> None:
         logger.info("Received %s — shutting down…", sig_name)
-        for task in all_tasks:
+        for task in [adapter_task, *session._agent_tasks]:
             task.cancel()
 
     for sig in (signal.SIGINT, signal.SIGTERM):
@@ -254,10 +339,11 @@ async def run() -> None:
     except asyncio.CancelledError:
         pass
     finally:
-        for task in all_tasks:
+        shutdown_tasks = [adapter_task, *session._agent_tasks]
+        for task in shutdown_tasks:
             if not task.done():
                 task.cancel()
-        await asyncio.gather(*all_tasks, return_exceptions=True)
+        await asyncio.gather(*shutdown_tasks, return_exceptions=True)
         logger.info("AlphaSign stopped.")
 
 

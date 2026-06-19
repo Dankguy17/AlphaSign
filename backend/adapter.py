@@ -69,6 +69,7 @@ class AlphaSignAdapter:
         self._send_ticker: Callable[[str], Awaitable[str]] | None = None
         self._create_room: Callable[[], Awaitable[dict[str, object]]] | None = None
         self._close_room: Callable[[str | None], Awaitable[dict[str, object]]] | None = None
+        self._start_runtime: Callable[[], Awaitable[None]] | None = None
 
     def configure_turn_limit(
         self,
@@ -84,11 +85,13 @@ class AlphaSignAdapter:
         sender: Callable[[str], Awaitable[str]],
         room_creator: Callable[[], Awaitable[dict[str, object]]],
         room_closer: Callable[[str | None], Awaitable[dict[str, object]]],
+        runtime_starter: Callable[[], Awaitable[None]],
     ) -> None:
         """Register the Band-only start agent used by GUI session creation."""
         self._send_ticker = sender
         self._create_room = room_creator
         self._close_room = room_closer
+        self._start_runtime = runtime_starter
 
     # ── Public API (called by main.py / SessionState) ─────────────────────
 
@@ -264,7 +267,11 @@ class AlphaSignAdapter:
                 pass
 
     async def _handle_start_session(self, request: web.Request) -> web.Response:
-        if self._send_ticker is None or self._create_room is None:
+        if (
+            self._send_ticker is None
+            or self._create_room is None
+            or self._start_runtime is None
+        ):
             return web.json_response({"error": "Band kickoff unavailable"}, status=503)
         try:
             payload = await request.json()
@@ -276,6 +283,7 @@ class AlphaSignAdapter:
 
         room_id: str | None = None
         try:
+            await self._start_runtime()
             room = await self._create_room()
             room_id = str(room["room_id"])
             await self._send_ticker(ticker)

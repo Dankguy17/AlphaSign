@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from pathlib import Path
 from typing import Literal
 
@@ -83,6 +84,37 @@ class GroqProtocolNormalizer:
         if not content:
             raise ValueError("Groq returned an empty protocol card")
         return LiveFindingCard.model_validate_json(content)
+
+    @staticmethod
+    def fallback(agent: str, text: str) -> LiveFindingCard:
+        """Build a renderable card without an LLM when normalization fails."""
+        clean = " ".join(text.split())
+        agent_title = agent.replace("_", " ").title()
+        stance = "unknown"
+        lowered = clean.lower()
+        if "bullish" in lowered or "upward" in lowered:
+            stance = "bullish"
+        elif "bearish" in lowered or "downward" in lowered:
+            stance = "bearish"
+        elif "mixed" in lowered:
+            stance = "mixed"
+        elif "neutral" in lowered:
+            stance = "neutral"
+
+        confidence = None
+        match = re.search(r"confidence(?:\s+in this assessment)?\s*(?::|is)?\s*(0(?:\.\d+)?|1(?:\.0+)?|\d{1,3})\s*(%)?", clean, re.I)
+        if match:
+            value = float(match.group(1))
+            confidence = value / 100 if match.group(2) or value > 1 else value
+            confidence = max(0, min(confidence, 1))
+
+        return LiveFindingCard(
+            kind="finding",
+            title=f"{agent_title} Analysis",
+            summary=clean[:500],
+            stance=stance,
+            confidence=confidence,
+        )
 
     def persist(self, event: dict) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
