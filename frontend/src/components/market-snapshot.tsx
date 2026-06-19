@@ -9,9 +9,15 @@ type MarketSnapshotProps = {
   market: MarketSnapshot | null;
   loading?: boolean;
   error?: string | null;
+  condensed?: boolean;
 };
 
-export function MarketSnapshot({ market, loading = false, error = null }: MarketSnapshotProps) {
+export function MarketSnapshot({
+  market,
+  loading = false,
+  error = null,
+  condensed = false,
+}: MarketSnapshotProps) {
   if (loading && !market) return <MarketSnapshotSkeleton />;
 
   if (!market) {
@@ -28,51 +34,66 @@ export function MarketSnapshot({ market, loading = false, error = null }: Market
   const positive = market.change >= 0;
 
   return (
-    <section className="panel p-5">
-      <PanelHeading
-        title="Market snapshot"
-        subtitle={`${market.source} · ${formatDateTime(market.as_of)}`}
-      />
-
-      <div className="mt-4 flex flex-wrap items-end justify-between gap-4">
-        <div className="min-w-0">
-          <div className="flex items-baseline gap-2.5">
-            <span className="font-mono text-[15px] font-medium text-[var(--ink)]">
-              {market.ticker}
-            </span>
-            <span className="truncate text-xs text-[var(--ink-subtle)]">{market.name}</span>
-          </div>
-          <div className="mt-1.5 display text-[40px] leading-none">
-            {formatCurrency(market.price)}
-          </div>
-        </div>
-        <span
-          className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm font-medium ${
-            positive
-              ? "bg-[color-mix(in_srgb,var(--positive)_14%,transparent)] text-[var(--positive)]"
-              : "bg-[color-mix(in_srgb,var(--negative)_14%,transparent)] text-[var(--negative)]"
-          }`}
-        >
-          {positive ? "▲" : "▼"}
-          {positive ? "+" : ""}
-          {formatCurrency(market.change)}
-          <span className="opacity-70">
-            ({positive ? "+" : ""}
-            {market.change_percent.toFixed(2)}%)
+    <section
+      className={`market-snapshot panel ${condensed ? "market-snapshot--condensed" : ""}`}
+      aria-label={`Market: ${market.ticker}`}
+    >
+      <div className="market-snapshot-summary">
+        <span className="market-snapshot-label">Market: {market.ticker}</span>
+        <span className="market-snapshot-quote">
+          <span>{formatCurrency(market.price)}</span>
+          <span className={positive ? "text-[var(--positive)]" : "text-[var(--negative)]"}>
+            {positive ? "+" : ""}{market.change_percent.toFixed(2)}% {positive ? "▲" : "▼"}
           </span>
         </span>
       </div>
 
-      <div className="mt-4 grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
-        <Metric label="Volume" value={formatCompactNumber(market.volume)} />
-        <Metric label="Market cap" value={formatCompactNumber(market.market_cap)} />
-        <Metric
-          label="52-week range"
-          value={`${formatCurrency(market.fifty_two_week_low)} – ${formatCurrency(market.fifty_two_week_high)}`}
-          wide
+      <div className="market-snapshot-details" aria-hidden={condensed}>
+        <PanelHeading
+          title="Market snapshot"
+          subtitle={`${market.source} · ${formatDateTime(market.as_of)}`}
         />
+
+        <div className="mt-4 flex flex-wrap items-end justify-between gap-4">
+          <div className="min-w-0">
+            <div className="flex items-baseline gap-2.5">
+              <span className="font-mono text-[15px] font-medium text-[var(--ink)]">
+                {market.ticker}
+              </span>
+              <span className="truncate text-xs text-[var(--ink-subtle)]">{market.name}</span>
+            </div>
+            <div className="mt-1.5 display text-[40px] leading-none">
+              {formatCurrency(market.price)}
+            </div>
+          </div>
+          <span
+            className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm font-medium ${
+              positive
+                ? "bg-[color-mix(in_srgb,var(--positive)_14%,transparent)] text-[var(--positive)]"
+                : "bg-[color-mix(in_srgb,var(--negative)_14%,transparent)] text-[var(--negative)]"
+            }`}
+          >
+            {positive ? "▲" : "▼"}
+            {positive ? "+" : ""}
+            {formatCurrency(market.change)}
+            <span className="opacity-70">
+              ({positive ? "+" : ""}
+              {market.change_percent.toFixed(2)}%)
+            </span>
+          </span>
+        </div>
+
+        <div className="mt-4 grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
+          <Metric label="Volume" value={formatCompactNumber(market.volume)} />
+          <Metric label="Market cap" value={formatCompactNumber(market.market_cap)} />
+          <Metric
+            label="52-week range"
+            value={`${formatCurrency(market.fifty_two_week_low)} – ${formatCurrency(market.fifty_two_week_high)}`}
+            wide
+          />
+        </div>
+        <AdvancedStockChart key={market.ticker} market={market} />
       </div>
-      <AdvancedStockChart key={market.ticker} market={market} />
     </section>
   );
 }

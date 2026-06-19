@@ -70,6 +70,12 @@ def _call_groq(conversation_text: str) -> str:
         Executive Intelligence Report. Structure your output EXACTLY as follows,
         using these section headers verbatim (they are used for PDF rendering):
 
+        ## Strategy Recommendation
+        (The first line MUST contain exactly one recommendation: BUY, SELL, or HOLD.
+        On the next line, state the confidence as a whole-number percentage. Then give
+        one concise paragraph explaining the strategy, entry/confirmation condition,
+        invalidation condition, and time horizon using only available evidence.)
+
         ## Executive Summary
         (2-3 paragraphs: what was investigated, the core finding, and the key risk)
 
@@ -100,6 +106,8 @@ def _call_groq(conversation_text: str) -> str:
         ---
         IMPORTANT RULES:
         - Do not invent numbers. Only cite figures that appear in the conversation.
+        - A BUY or SELL requires corroboration from both quantitative and latent-state
+          evidence. Use HOLD when evidence is mixed or insufficient.
         - Use precise financial language. Avoid vague phrases like "may" or "could potentially".
         - Be direct. Each section should be dense with evidence, not filler prose.
         - If a section cannot be completed because the agents did not produce the
@@ -152,6 +160,9 @@ def _render_pdf(report_text: str, output_path: str) -> bytes:
         "tertiary": colors.HexColor("#62666d"),
         "primary": colors.HexColor("#5e6ad2"),
         "primary_hover": colors.HexColor("#828fff"),
+        "positive": colors.HexColor("#2fbf71"),
+        "negative": colors.HexColor("#eb5757"),
+        "warning": colors.HexColor("#e2a336"),
     }
 
     doc = SimpleDocTemplate(
@@ -242,6 +253,14 @@ def _render_pdf(report_text: str, output_path: str) -> bytes:
             "page_number", parent=base_styles["Normal"], fontName="Helvetica",
             fontSize=7, textColor=palette["tertiary"], alignment=TA_CENTER,
         ),
+        "strategy_label": ParagraphStyle(
+            "strategy_label", parent=base_styles["Normal"], fontName="Helvetica-Bold",
+            fontSize=8, leading=10, textColor=palette["subtle"], spaceAfter=4,
+        ),
+        "strategy_action": ParagraphStyle(
+            "strategy_action", parent=base_styles["Normal"], fontName="Helvetica-Bold",
+            fontSize=30, leading=34, textColor=palette["ink"], spaceAfter=4,
+        ),
     }
 
     story = []
@@ -296,8 +315,64 @@ def _render_pdf(report_text: str, output_path: str) -> bytes:
     if content:
         sections.append((heading, content))
 
+    # Keep the decision immediately below the title even when rendering reports
+    # produced by an older prompt that placed this section later in the output.
+    sections.sort(key=lambda section: section[0].lower() != "strategy recommendation")
+
     card_width = letter[0] - doc.leftMargin - doc.rightMargin
     for index, (section_title, items) in enumerate(sections):
+        if section_title.lower() == "strategy recommendation":
+            strategy_text = " ".join(value for kind, value in items if kind != "space")
+            action_match = re.search(r"\b(BUY|SELL|HOLD)\b", strategy_text, re.IGNORECASE)
+            action = action_match.group(1).upper() if action_match else "HOLD"
+            action_color = {
+                "BUY": palette["positive"],
+                "SELL": palette["negative"],
+                "HOLD": palette["warning"],
+            }[action]
+            details = []
+            removed_action = False
+            for kind, value in items:
+                if not removed_action and re.fullmatch(
+                    r"(?:\*\*)?\s*(BUY|SELL|HOLD)\s*(?:\*\*)?[.!]?",
+                    value,
+                    re.IGNORECASE,
+                ):
+                    removed_action = True
+                    continue
+                if kind == "space":
+                    details.append(Spacer(1, 3))
+                elif kind == "bullet":
+                    details.append(_para(value, "bullet", bullet_text="•"))
+                else:
+                    details.append(_para(value, "body"))
+            strategy_card = Table(
+                [[
+                    [
+                        Paragraph("STRATEGY RECOMMENDATION", styles["strategy_label"]),
+                        Paragraph(action, ParagraphStyle(
+                            "strategy_action_colored",
+                            parent=styles["strategy_action"],
+                            textColor=action_color,
+                        )),
+                    ],
+                    details,
+                ]],
+                colWidths=[1.72 * inch, card_width - 1.72 * inch],
+                style=TableStyle([
+                    ("BACKGROUND", (0, 0), (-1, -1), palette["surface_1"]),
+                    ("BOX", (0, 0), (-1, -1), 1.1, action_color),
+                    ("LINEAFTER", (0, 0), (0, 0), 0.75, palette["hairline"]),
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 16),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 16),
+                    ("TOPPADDING", (0, 0), (-1, -1), 15),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
+                ]),
+            )
+            story.append(KeepTogether([strategy_card, Spacer(1, 10)]))
+            continue
+
         heading_row = Table(
             [["", _para(section_title, "section_heading")]],
             colWidths=[3, card_width - 3 - 26],

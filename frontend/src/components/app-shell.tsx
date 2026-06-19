@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useRef, useState } from "react";
+import Image from "next/image";
 import { AgentGraph } from "@/components/agent-graph";
 import { AgentLanes } from "@/components/agent-lanes";
 import { MessageStream } from "@/components/message-stream";
@@ -243,7 +244,17 @@ export function AppShell() {
           <div className="ticker-intro-shade" />
           <div className="ticker-intro-content">
             <p className="ticker-intro-kicker">Multi-agent market intelligence</p>
-            <h1>AlphaSign</h1>
+            <h1 className="ticker-intro-title">
+              <Image
+                src="/logo.png"
+                alt="A"
+                width={118}
+                height={118}
+                priority
+                className="brand-logo ticker-intro-logo"
+              />
+              <span>lphaSign</span>
+            </h1>
             <p className="ticker-intro-copy">Enter a market ticker to begin the signal.</p>
             <form className="ticker-intro-form" onSubmit={handleTickerOpen}>
               <label className="sr-only" htmlFor="intro-ticker">Stock ticker</label>
@@ -408,7 +419,12 @@ export function AppShell() {
           ) : null}
 
           {marketTicker || marketLoading ? (
-            <MarketSnapshot market={market} loading={marketLoading} error={marketError} />
+            <MarketSnapshot
+              market={market}
+              loading={marketLoading}
+              error={marketError}
+              condensed={showWorkflow}
+            />
           ) : null}
 
           {showWorkflow ? (
@@ -548,22 +564,13 @@ function DashboardSkeleton() {
 
 function BrandMark() {
   return (
-    <span
-      aria-hidden
-      className="flex h-9 w-9 items-center justify-center rounded-[8px] bg-[var(--primary)]"
-      style={{ boxShadow: "inset 0 1px 0 rgba(255,255,255,0.25)" }}
-    >
-      <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-        <path
-          d="M2 13.5 L6.5 7 L9.5 10 L16 2.5"
-          stroke="#fff"
-          strokeWidth="1.8"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        <circle cx="16" cy="2.5" r="1.6" fill="#fff" />
-      </svg>
-    </span>
+    <Image
+      src="/logo.png"
+      alt=""
+      width={36}
+      height={36}
+      className="brand-logo h-9 w-9 object-contain"
+    />
   );
 }
 
